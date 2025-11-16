@@ -65,7 +65,7 @@ static uint32_t g_config_frames = 0;
 static uint32_t g_interrupt_count = 0;
 
 // Output decimation (reduce printf frequency)
-#define OUTPUT_DECIMATION 10  // Output every Nth interrupt
+#define OUTPUT_DECIMATION 1  // Output every Nth interrupt (1 = every interrupt = 50Hz)
 static uint32_t g_output_counter = 0;
 
 // Teleplot output enable/disable flag
