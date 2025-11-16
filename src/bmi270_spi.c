@@ -1,0 +1,333 @@
+/**
+ * @file bmi270_spi.c
+ * @brief BMI270 SPI communication layer
+ *
+ * This file implements the SPI communication functions for BMI270.
+ * Key points:
+ * - READ operations require 3-byte transaction (CMD + Dummy + Data)
+ * - WRITE operations require 2-byte transaction (CMD + Data)
+ * - Proper timing delays must be observed
+ */
+
+#include <string.h>
+#include "bmi270_defs.h"
+#include "bmi270_types.h"
+#include "esp_log.h"
+#include "esp_rom_sys.h"
+
+static const char *TAG = "BMI270_SPI";
+
+/**
+ * @brief Initialize SPI bus and add BMI270 device
+ *
+ * @param dev Pointer to BMI270 device structure
+ * @param config Pointer to configuration structure
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t bmi270_spi_init(bmi270_dev_t *dev, const bmi270_config_t *config) {
+    if (dev == NULL || config == NULL) {
+        ESP_LOGE(TAG, "NULL pointer passed to bmi270_spi_init");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret;
+
+    // Store GPIO pins
+    dev->gpio_mosi = config->gpio_mosi;
+    dev->gpio_miso = config->gpio_miso;
+    dev->gpio_sclk = config->gpio_sclk;
+    dev->gpio_cs = config->gpio_cs;
+    dev->spi_clock_hz = config->spi_clock_hz;
+    dev->initialized = false;
+
+    // Configure SPI bus
+    spi_bus_config_t bus_config = {
+        .mosi_io_num = config->gpio_mosi,
+        .miso_io_num = config->gpio_miso,
+        .sclk_io_num = config->gpio_sclk,
+        .quadwp_io_num = -1,  // Not used
+        .quadhd_io_num = -1,  // Not used
+        .max_transfer_sz = BMI270_CONFIG_FILE_SIZE + 2,  // For config file + header
+        .flags = SPICOMMON_BUSFLAG_MASTER,
+    };
+
+    // Initialize SPI bus with DMA
+    ret = spi_bus_initialize(config->spi_host, &bus_config, SPI_DMA_CH_AUTO);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "SPI bus initialized on host %d", config->spi_host);
+
+    // Configure BMI270 device
+    spi_device_interface_config_t dev_config = {
+        .mode = 0,  // SPI Mode 0 (CPOL=0, CPHA=0)
+        .clock_speed_hz = config->spi_clock_hz,
+        .spics_io_num = config->gpio_cs,
+        .queue_size = 7,  // Transaction queue size
+        .flags = 0,
+        .command_bits = 0,
+        .address_bits = 0,
+        .dummy_bits = 0,
+        .cs_ena_pretrans = 0,
+        .cs_ena_posttrans = 0,
+        .input_delay_ns = 0,
+        .pre_cb = NULL,
+        .post_cb = NULL,
+    };
+
+    // Add device to SPI bus
+    ret = spi_bus_add_device(config->spi_host, &dev_config, &dev->spi_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add BMI270 to SPI bus: %s", esp_err_to_name(ret));
+        spi_bus_free(config->spi_host);
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "BMI270 SPI device added successfully");
+    ESP_LOGI(TAG, "GPIO - MOSI:%d MISO:%d SCLK:%d CS:%d",
+             config->gpio_mosi, config->gpio_miso,
+             config->gpio_sclk, config->gpio_cs);
+    ESP_LOGI(TAG, "SPI Clock: %lu Hz", config->spi_clock_hz);
+
+    dev->initialized = true;
+    return ESP_OK;
+}
+
+/**
+ * @brief Read single register from BMI270 (3-byte transaction)
+ *
+ * BMI270 SPI Read Protocol:
+ *   TX: [CMD: R/W=1 + Addr] [Dummy] [Dummy]
+ *   RX: [Echo]              [Dummy] [DATA]  <- Byte 3 is valid data
+ *
+ * @param dev Pointer to BMI270 device structure
+ * @param reg_addr Register address (0x00-0x7F)
+ * @param data Pointer to store read data
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *data) {
+    if (dev == NULL || data == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_read_register");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->initialized) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // 3-byte transaction buffers
+    uint8_t tx_data[3] = {
+        reg_addr | BMI270_SPI_READ_BIT,  // Byte 1: Read command (bit7=1)
+        0x00,                             // Byte 2: Dummy (TX side)
+        0x00                              // Byte 3: Dummy (TX side)
+    };
+    uint8_t rx_data[3] = {0};
+
+    spi_transaction_t trans = {
+        .flags = 0,
+        .length = 3 * 8,      // 3 bytes = 24 bits
+        .rxlength = 3 * 8,    // Receive 3 bytes
+        .tx_buffer = tx_data,
+        .rx_buffer = rx_data,
+        .user = NULL,
+    };
+
+    // Execute transaction (polling mode for reliability)
+    esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &trans);
+
+    if (ret == ESP_OK) {
+        // rx_data[0] = Command echo (discard)
+        // rx_data[1] = Dummy (discard)
+        *data = rx_data[2];  // ★ Byte 3 is valid data
+    } else {
+        ESP_LOGE(TAG, "SPI read failed: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+/**
+ * @brief Write single register to BMI270 (2-byte transaction)
+ *
+ * BMI270 SPI Write Protocol:
+ *   TX: [CMD: R/W=0 + Addr] [DATA]
+ *
+ * @param dev Pointer to BMI270 device structure
+ * @param reg_addr Register address (0x00-0x7F)
+ * @param data Data to write
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t bmi270_write_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t data) {
+    if (dev == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_write_register");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->initialized) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // 2-byte transaction buffer
+    uint8_t tx_data[2] = {
+        reg_addr & ~BMI270_SPI_READ_BIT,  // Byte 1: Write command (bit7=0)
+        data                               // Byte 2: Data
+    };
+
+    spi_transaction_t trans = {
+        .flags = 0,
+        .length = 2 * 8,      // 2 bytes = 16 bits
+        .tx_buffer = tx_data,
+        .rx_buffer = NULL,    // No receive needed
+        .user = NULL,
+    };
+
+    // Execute transaction
+    esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &trans);
+
+    if (ret == ESP_OK) {
+        // Wait after write (normal mode: 2µs)
+        esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
+    } else {
+        ESP_LOGE(TAG, "SPI write failed: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+/**
+ * @brief Read multiple registers from BMI270 (burst read)
+ *
+ * Burst Read Protocol:
+ *   TX: [CMD] [Dummy] [Dummy] [Dummy] ... [Dummy]
+ *   RX: [Echo] [Dummy] [D0]   [D1]   ... [DN]
+ *                       ↑ Valid data starts here
+ *
+ * @param dev Pointer to BMI270 device structure
+ * @param reg_addr Starting register address
+ * @param data Pointer to buffer for read data
+ * @param length Number of bytes to read
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t bmi270_read_burst(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *data, size_t length) {
+    if (dev == NULL || data == NULL || length == 0) {
+        ESP_LOGE(TAG, "Invalid parameters in bmi270_read_burst");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->initialized) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret;
+
+    // Total bytes = 1 (CMD) + 1 (Dummy) + length (Data)
+    size_t total_bytes = 2 + length;
+
+    // Allocate DMA-capable buffers
+    uint8_t *tx_buffer = heap_caps_malloc(total_bytes, MALLOC_CAP_DMA);
+    uint8_t *rx_buffer = heap_caps_malloc(total_bytes, MALLOC_CAP_DMA);
+
+    if (!tx_buffer || !rx_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate DMA buffers");
+        heap_caps_free(tx_buffer);
+        heap_caps_free(rx_buffer);
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Prepare TX buffer
+    tx_buffer[0] = reg_addr | BMI270_SPI_READ_BIT;  // Read command
+    memset(&tx_buffer[1], 0x00, total_bytes - 1);   // Dummy bytes
+
+    spi_transaction_t trans = {
+        .flags = 0,
+        .length = total_bytes * 8,
+        .rxlength = total_bytes * 8,
+        .tx_buffer = tx_buffer,
+        .rx_buffer = rx_buffer,
+        .user = NULL,
+    };
+
+    ret = spi_device_polling_transmit(dev->spi_handle, &trans);
+
+    if (ret == ESP_OK) {
+        // rx_buffer[0] = Command echo (discard)
+        // rx_buffer[1] = Dummy (discard)
+        // rx_buffer[2~] = Valid data
+        memcpy(data, &rx_buffer[2], length);
+    } else {
+        ESP_LOGE(TAG, "SPI burst read failed: %s", esp_err_to_name(ret));
+    }
+
+    heap_caps_free(tx_buffer);
+    heap_caps_free(rx_buffer);
+
+    return ret;
+}
+
+/**
+ * @brief Write multiple registers to BMI270 (burst write)
+ *
+ * Burst Write Protocol:
+ *   TX: [CMD] [D0] [D1] [D2] ... [DN]
+ *         ↑    ↑ Data starts immediately after command
+ *
+ * @param dev Pointer to BMI270 device structure
+ * @param reg_addr Starting register address
+ * @param data Pointer to data to write
+ * @param length Number of bytes to write
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t bmi270_write_burst(bmi270_dev_t *dev, uint8_t reg_addr, const uint8_t *data, size_t length) {
+    if (dev == NULL || data == NULL || length == 0) {
+        ESP_LOGE(TAG, "Invalid parameters in bmi270_write_burst");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->initialized) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret;
+
+    // Total bytes = 1 (CMD) + length (Data)
+    size_t total_bytes = 1 + length;
+
+    // Allocate DMA-capable buffer
+    uint8_t *tx_buffer = heap_caps_malloc(total_bytes, MALLOC_CAP_DMA);
+
+    if (!tx_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate DMA buffer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Prepare TX buffer
+    tx_buffer[0] = reg_addr & ~BMI270_SPI_READ_BIT;  // Write command
+    memcpy(&tx_buffer[1], data, length);
+
+    spi_transaction_t trans = {
+        .flags = 0,
+        .length = total_bytes * 8,
+        .tx_buffer = tx_buffer,
+        .rx_buffer = NULL,
+        .user = NULL,
+    };
+
+    ret = spi_device_polling_transmit(dev->spi_handle, &trans);
+
+    heap_caps_free(tx_buffer);
+
+    if (ret == ESP_OK) {
+        // Wait after write (suspend mode: 450µs for safety)
+        esp_rom_delay_us(BMI270_DELAY_WRITE_SUSPEND_US);
+    } else {
+        ESP_LOGE(TAG, "SPI burst write failed: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}

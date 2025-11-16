@@ -1,0 +1,196 @@
+/**
+ * @file main.c
+ * @brief Stage 1: BMI270 SPI Basic Communication Test
+ *
+ * This example demonstrates:
+ * - SPI initialization with ESP-IDF
+ * - 3-byte read transaction implementation
+ * - CHIP_ID verification
+ * - Communication stability test
+ *
+ * Expected output:
+ * - CHIP_ID should read 0x24
+ * - 100% success rate over 10 consecutive reads
+ *
+ * Hardware: M5StampS3 + BMI270
+ * Connections:
+ *   - MOSI: GPIO14
+ *   - MISO: GPIO43
+ *   - SCK:  GPIO44
+ *   - CS:   GPIO46
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_err.h"
+#include "bmi270_defs.h"
+#include "bmi270_types.h"
+
+static const char *TAG = "BMI270_TEST";
+
+// Forward declarations
+esp_err_t bmi270_spi_init(bmi270_dev_t *dev, const bmi270_config_t *config);
+esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *data);
+esp_err_t bmi270_write_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t data);
+
+/**
+ * @brief Test CHIP_ID reading
+ *
+ * @param dev Pointer to BMI270 device
+ * @return esp_err_t ESP_OK if CHIP_ID is correct
+ */
+static esp_err_t test_chip_id(bmi270_dev_t *dev) {
+    uint8_t chip_id = 0;
+    esp_err_t ret;
+
+    ESP_LOGI(TAG, "Reading CHIP_ID...");
+
+    ret = bmi270_read_register(dev, BMI270_REG_CHIP_ID, &chip_id);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read CHIP_ID: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "CHIP_ID = 0x%02X (expected: 0x%02X)", chip_id, BMI270_CHIP_ID);
+
+    if (chip_id == BMI270_CHIP_ID) {
+        ESP_LOGI(TAG, "✓ CHIP_ID verification SUCCESS");
+        return ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "✗ CHIP_ID verification FAILED");
+        return ESP_FAIL;
+    }
+}
+
+/**
+ * @brief Test communication stability
+ *
+ * @param dev Pointer to BMI270 device
+ * @param iterations Number of test iterations
+ * @return esp_err_t ESP_OK if all reads successful
+ */
+static esp_err_t test_communication_stability(bmi270_dev_t *dev, int iterations) {
+    int success_count = 0;
+    int fail_count = 0;
+    uint8_t chip_id;
+    esp_err_t ret;
+
+    ESP_LOGI(TAG, "Testing communication stability (%d iterations)...", iterations);
+
+    for (int i = 0; i < iterations; i++) {
+        ret = bmi270_read_register(dev, BMI270_REG_CHIP_ID, &chip_id);
+
+        if (ret == ESP_OK && chip_id == BMI270_CHIP_ID) {
+            success_count++;
+        } else {
+            fail_count++;
+            ESP_LOGW(TAG, "Iteration %d: FAIL (ret=%s, chip_id=0x%02X)",
+                     i + 1, esp_err_to_name(ret), chip_id);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));  // 10ms delay between reads
+    }
+
+    float success_rate = (float)success_count / iterations * 100.0f;
+
+    ESP_LOGI(TAG, "Communication test results:");
+    ESP_LOGI(TAG, "  Success: %d/%d (%.1f%%)", success_count, iterations, success_rate);
+    ESP_LOGI(TAG, "  Failed:  %d/%d", fail_count, iterations);
+
+    if (success_rate == 100.0f) {
+        ESP_LOGI(TAG, "✓ Communication stability test PASSED");
+        return ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "✗ Communication stability test FAILED");
+        return ESP_FAIL;
+    }
+}
+
+/**
+ * @brief Perform dummy read to switch BMI270 to SPI mode
+ *
+ * The BMI270 powers up in I2C mode by default. A dummy SPI read
+ * triggers the sensor to switch to SPI mode.
+ *
+ * @param dev Pointer to BMI270 device
+ */
+static void perform_dummy_read(bmi270_dev_t *dev) {
+    uint8_t dummy;
+
+    ESP_LOGI(TAG, "Performing dummy read to activate SPI mode...");
+
+    // First read may fail as sensor switches modes
+    bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);
+    vTaskDelay(pdMS_TO_TICKS(1));
+
+    // Second read should succeed
+    bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);
+
+    ESP_LOGI(TAG, "SPI mode activated");
+}
+
+void app_main(void) {
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, " BMI270 Stage 1: SPI Basic Communication");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "");
+
+    esp_err_t ret;
+    bmi270_dev_t dev = {0};
+
+    // Configure BMI270 (StampFly pin assignment)
+    bmi270_config_t config = {
+        .gpio_mosi = 14,
+        .gpio_miso = 43,
+        .gpio_sclk = 44,
+        .gpio_cs = 46,
+        .spi_clock_hz = 10000000,  // 10 MHz
+        .spi_host = SPI2_HOST,
+    };
+
+    // Step 1: Initialize SPI
+    ESP_LOGI(TAG, "Step 1: Initializing SPI...");
+    ret = bmi270_spi_init(&dev, &config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SPI initialization failed!");
+        return;
+    }
+    ESP_LOGI(TAG, "✓ SPI initialized successfully");
+    ESP_LOGI(TAG, "");
+
+    // Step 2: Perform dummy read to activate SPI mode
+    ESP_LOGI(TAG, "Step 2: Activating SPI mode...");
+    perform_dummy_read(&dev);
+    ESP_LOGI(TAG, "");
+
+    // Step 3: Test CHIP_ID
+    ESP_LOGI(TAG, "Step 3: Testing CHIP_ID...");
+    ret = test_chip_id(&dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "CHIP_ID test failed!");
+        return;
+    }
+    ESP_LOGI(TAG, "");
+
+    // Step 4: Test communication stability
+    ESP_LOGI(TAG, "Step 4: Testing communication stability...");
+    ret = test_communication_stability(&dev, 100);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Stability test failed!");
+        return;
+    }
+    ESP_LOGI(TAG, "");
+
+    // All tests passed
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, " ✓ ALL TESTS PASSED");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "Stage 1 completed successfully!");
+    ESP_LOGI(TAG, "BMI270 SPI communication is working correctly.");
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Next step: Stage 2 - Initialization sequence");
+}
