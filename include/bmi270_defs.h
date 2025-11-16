@@ -80,6 +80,14 @@ extern "C" {
 #define BMI270_INTERNAL_STATUS_MSG_INIT_OK      0x01    // Initialization OK
 #define BMI270_INTERNAL_STATUS_MSG_INIT_ERR     0x02    // Initialization error
 
+/* Initialization Control Commands */
+#define BMI270_INIT_CTRL_PREPARE        0x00    // Prepare for config file upload
+#define BMI270_INIT_CTRL_COMPLETE       0x01    // Config file upload complete
+
+/* Power Configuration */
+#define BMI270_PWR_CONF_ADV_PWR_SAVE_EN 0x00    // Disable advanced power save (for init)
+#define BMI270_PWR_CONF_NORMAL          0x02    // Normal power mode
+
 /* Power Control Bits */
 #define BMI270_PWR_CTRL_AUX_EN          (1 << 0)    // Enable auxiliary sensor
 #define BMI270_PWR_CTRL_GYR_EN          (1 << 1)    // Enable gyroscope
@@ -101,6 +109,7 @@ extern "C" {
 
 /* Configuration File */
 #define BMI270_CONFIG_FILE_SIZE         8192    // Size of config file in bytes
+#define BMI270_CONFIG_BURST_SIZE        32      // Burst write size for config upload (bytes)
 
 
 #ifdef __cplusplus
