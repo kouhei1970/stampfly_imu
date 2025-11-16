@@ -165,7 +165,7 @@ esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *dat
 
     if (ret == ESP_OK) {
         // DEBUG: Log all received bytes for troubleshooting
-        ESP_LOGI(TAG, "Read reg 0x%02X: rx[0]=0x%02X rx[1]=0x%02X rx[2]=0x%02X",
+        ESP_LOGD(TAG, "Read reg 0x%02X: rx[0]=0x%02X rx[1]=0x%02X rx[2]=0x%02X",
                  reg_addr, rx_data[0], rx_data[1], rx_data[2]);
 
         // rx_data[0] = Command echo (discard)
