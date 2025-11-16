@@ -69,9 +69,11 @@ static esp_err_t read_fifo_frame(uint8_t *frame_data)
 
 /**
  * @brief Parse and display FIFO frame
- * @return ESP_OK if frame is valid, ESP_FAIL if invalid header detected
+ * @param frame_data Frame data buffer
+ * @param frame_count Current frame count (1-based)
+ * @return ESP_OK if frame is valid, ESP_FAIL if invalid header detected (after first frame)
  */
-static esp_err_t parse_and_display_frame(const uint8_t *frame_data)
+static esp_err_t parse_and_display_frame(const uint8_t *frame_data, uint32_t frame_count)
 {
     uint8_t header = frame_data[0];
 
@@ -79,8 +81,14 @@ static esp_err_t parse_and_display_frame(const uint8_t *frame_data)
 
     if (header != FIFO_HEADER_ACC_GYR) {
         ESP_LOGW(TAG, "Unexpected header! Expected 0x8C, got 0x%02X", header);
-        ESP_LOGW(TAG, "This indicates FIFO overflow or config change frame");
-        return ESP_FAIL;
+
+        if (frame_count == 1) {
+            ESP_LOGI(TAG, "First frame - likely config change frame (0x48), skipping...");
+            return ESP_FAIL;  // Skip but continue
+        } else {
+            ESP_LOGW(TAG, "This indicates FIFO overflow or skip frame");
+            return ESP_FAIL;  // Terminate
+        }
     }
 
     // Parse gyroscope data FIRST (bytes 1-6)
@@ -241,14 +249,19 @@ void app_main(void)
             }
 
             // Parse and display frame
-            ret = parse_and_display_frame(frame_data);
+            ret = parse_and_display_frame(frame_data, frame_count);
             if (ret != ESP_OK) {
-                // Invalid header detected - end test
-                ESP_LOGI(TAG, "========================================");
-                ESP_LOGI(TAG, " Step 1 Complete: FIFO basic operation verified");
-                ESP_LOGI(TAG, " Successfully read %lu valid frames", frame_count - 1);
-                ESP_LOGI(TAG, "========================================");
-                return;
+                if (frame_count == 1) {
+                    // First frame may be config change frame - skip and continue
+                    ESP_LOGI(TAG, "Skipping first frame, continuing...");
+                } else {
+                    // Invalid header detected after first frame - end test
+                    ESP_LOGI(TAG, "========================================");
+                    ESP_LOGI(TAG, " Step 1 Complete: FIFO basic operation verified");
+                    ESP_LOGI(TAG, " Successfully read %lu valid frames", frame_count - 1);
+                    ESP_LOGI(TAG, "========================================");
+                    return;
+                }
             }
 
             // Read FIFO length again to verify data was consumed
