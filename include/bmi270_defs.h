@@ -57,6 +57,12 @@ extern "C" {
 #define BMI270_REG_GYR_CONF             0x42    // Gyroscope configuration
 #define BMI270_REG_GYR_RANGE            0x43    // Gyroscope range
 
+/* Interrupt Configuration Registers */
+#define BMI270_REG_INT1_IO_CTRL         0x53    // INT1 pin configuration
+#define BMI270_REG_INT2_IO_CTRL         0x54    // INT2 pin configuration
+#define BMI270_REG_INT_LATCH            0x55    // Interrupt latch configuration
+#define BMI270_REG_INT_MAP_DATA         0x58    // Data Ready interrupt mapping
+
 /* Initialization Registers */
 #define BMI270_REG_INIT_CTRL            0x59    // Initialization control
 #define BMI270_REG_INIT_ADDR_0          0x5B    // Init address LSB
@@ -139,6 +145,19 @@ extern "C" {
 /* Temperature Sensor Constants */
 #define BMI270_TEMP_OFFSET              23.0f       // Temperature offset (°C)
 #define BMI270_TEMP_SCALE               512.0f      // Temperature scale (LSB/°C)
+
+/* INT1_IO_CTRL / INT2_IO_CTRL Register Bits */
+#define BMI270_INT_OUTPUT_EN            (1 << 3)    // Enable interrupt output
+#define BMI270_INT_ACTIVE_HIGH          (1 << 1)    // Active High (1) vs Active Low (0)
+#define BMI270_INT_OPEN_DRAIN           (1 << 2)    // Open-Drain (1) vs Push-Pull (0)
+
+/* INT_LATCH Register Values */
+#define BMI270_INT_LATCH_DISABLED       0x00        // Non-latched (pulse mode)
+#define BMI270_INT_LATCH_ENABLED        0x01        // Latched mode
+
+/* INT_MAP_DATA Register Bits */
+#define BMI270_DRDY_INT1                (1 << 2)    // Map Data Ready to INT1
+#define BMI270_DRDY_INT2                (1 << 6)    // Map Data Ready to INT2
 
 
 #ifdef __cplusplus

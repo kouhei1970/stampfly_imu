@@ -65,7 +65,17 @@ idf.py flash monitor
 
 終了: `Ctrl+]`
 
+## 出力設定
+
+デフォルトでは、物理値（g、°/s、°C）のみを出力します。RAW値（LSB）を表示したい場合は、[main.c:31](main/main.c#L31)を修正してください:
+
+```c
+#define OUTPUT_RAW_VALUES   1  // Set to 1 to output raw sensor values (LSB)
+```
+
 ## 期待される出力
+
+### 初期化ログ
 
 ```
 I (xxx) BMI270_STAGE3: ========================================
@@ -77,53 +87,49 @@ I (xxx) BMI270_SPI: SPI bus initialized on host 1
 I (xxx) BMI270_SPI: BMI270 SPI device added successfully
 I (xxx) BMI270_STAGE3: ✓ SPI initialized successfully
 
-I (xxx) BMI270_STAGE3: Step 2: Activating SPI mode...
-I (xxx) BMI270_STAGE3: SPI mode activated
-
-I (xxx) BMI270_STAGE3: Step 3: Initializing BMI270...
-I (xxx) BMI270_INIT: ========================================
-I (xxx) BMI270_INIT:  BMI270 Initialization Sequence
-I (xxx) BMI270_INIT: ========================================
 ...
-I (xxx) BMI270_INIT:  ✓ BMI270 Initialization Complete
-I (xxx) BMI270_INIT: ========================================
-I (xxx) BMI270_STAGE3: ✓ BMI270 initialized successfully
-
-I (xxx) BMI270_STAGE3: Step 4: Configuring sensors...
-I (xxx) BMI270_DATA: Accelerometer range set to 0x01
-I (xxx) BMI270_STAGE3: Accelerometer range set to ±4g
-I (xxx) BMI270_DATA: Gyroscope range set to 0x01
-I (xxx) BMI270_STAGE3: Gyroscope range set to ±1000 °/s
-I (xxx) BMI270_DATA: Accelerometer config set: ODR=0x08, filter_perf=1 (ACC_CONF=0x88)
-I (xxx) BMI270_STAGE3: Accelerometer configured: 100Hz, Performance mode
-I (xxx) BMI270_DATA: Gyroscope config set: ODR=0x09, filter_perf=1 (GYR_CONF=0x89)
-I (xxx) BMI270_STAGE3: Gyroscope configured: 200Hz, Performance mode
-I (xxx) BMI270_STAGE3: ✓ Sensor configuration complete
 
 I (xxx) BMI270_STAGE3: Step 5: Starting continuous data reading...
-I (xxx) BMI270_STAGE3: Polling interval: 100 ms
+I (xxx) BMI270_STAGE3: Polling interval: 10 ms (100.0 Hz)
 
 I (xxx) BMI270_STAGE3: ========================================
-I (xxx) BMI270_STAGE3:  Data Stream (press Ctrl+] to stop)
+I (xxx) BMI270_STAGE3:  Teleplot Data Stream (press Ctrl+] to stop)
 I (xxx) BMI270_STAGE3: ========================================
+```
 
-[Sample #1]
-  Accelerometer (±4g):
-    Raw:      X=  -120  Y=   230  Z=  8192 [LSB]
-    Physical: X= -0.015  Y=  0.028  Z=  1.000 [g]
-  Gyroscope (±1000 °/s):
-    Raw:      X=    15  Y=   -22  Z=     5 [LSB]
-    Physical: X=   0.46  Y=  -0.67  Z=   0.15 [°/s]
+### デフォルト出力（物理値のみ）
 
-[Sample #2]
-  Accelerometer (±4g):
-    Raw:      X=  -118  Y=   228  Z=  8195 [LSB]
-    Physical: X= -0.014  Y=  0.028  Z=  1.000 [g]
-  Gyroscope (±1000 °/s):
-    Raw:      X=    12  Y=   -20  Z=     8 [LSB]
-    Physical: X=   0.37  Y=  -0.61  Z=   0.24 [°/s]
+Teleplot形式で7チャンネルのデータを出力:
 
-...
+```
+>acc_x:-0.0299
+>acc_y:0.0156
+>acc_z:1.0000
+>gyr_x:0.366
+>gyr_y:-0.244
+>gyr_z:0.091
+>temp:25.00
+```
+
+### RAW値有効時 (OUTPUT_RAW_VALUES=1)
+
+14チャンネル（RAW値を含む）:
+
+```
+>acc_raw_x:-245
+>acc_raw_y:128
+>acc_raw_z:8192
+>acc_x:-0.0299
+>acc_y:0.0156
+>acc_z:1.0000
+>gyr_raw_x:12
+>gyr_raw_y:-8
+>gyr_raw_z:3
+>gyr_x:0.366
+>gyr_y:-0.244
+>gyr_z:0.091
+>temp_raw:1024
+>temp:25.00
 ```
 
 ## 成功基準

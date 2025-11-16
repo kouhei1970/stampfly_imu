@@ -589,6 +589,205 @@ BMI270のデータレジスタは、**すべてリトルエンディアン**で�
 - 値が頻繁に反転（+85°C ↔ -30°C）: 温度センサーが有効化されておらず、未定義データを読み取っている
 - 起動直後のみ不安定: 正常（温度センサーは1.28秒ごと更新、起動後数秒で安定）
 
+### 4.7 割り込み機能（Data Ready）
+
+BMI270には、データ準備完了時にマイクロコントローラーに通知する**Data Ready割り込み**機能があります。ポーリング方式と比較して、CPU負荷を削減し、データ取得のタイミングを正確に制御できます。
+
+#### 割り込み機能の利点
+
+**ポーリング方式の課題**:
+- CPU負荷が高い（常にセンサーをチェック）
+- データ取得タイミングが不正確
+- 消費電力が大きい
+
+**割り込み方式の利点**:
+- **イベント駆動**: データ準備完了時のみ処理
+- **CPU負荷削減**: 待機中はスリープ可能
+- **正確なタイミング**: ODRに同期したデータ取得
+- **低消費電力**: 必要時のみCPU稼働
+
+#### BMI270の割り込みピン
+
+BMI270には2つの割り込み出力ピンがあります：
+
+| ピン名 | 説明 |
+|-------|------|
+| INT1 | 割り込み出力1（汎用） |
+| INT2 | 割り込み出力2（汎用） |
+
+どちらのピンも、複数の割り込みソースをマッピング可能です。
+
+#### Data Ready割り込みの種類
+
+| 割り込みタイプ | 説明 |
+|-------------|------|
+| **ACC_DRDY** | 加速度データ準備完了 |
+| **GYR_DRDY** | ジャイロデータ準備完了 |
+
+これらは個別に有効化でき、INT1またはINT2ピンにマッピングできます。
+
+#### 割り込み設定の手順
+
+**Step 1: 割り込み出力ピンの設定（INT1_IO_CTRL / INT2_IO_CTRL）**
+
+INT1_IO_CTRLレジスタ（アドレス 0x53）またはINT2_IO_CTRLレジスタ（アドレス 0x54）で出力特性を設定します。
+
+| ビット | 名前 | 設定値 | 説明 |
+|-------|------|--------|------|
+| bit 0 | output_en | 1 | 割り込み出力を有効化 |
+| bit 1 | lvl | 0/1 | 0=Active Low, 1=Active High |
+| bit 2 | od | 0/1 | 0=Push-Pull, 1=Open-Drain |
+
+**推奨設定**: Push-Pull, Active High
+```c
+uint8_t int1_io_ctrl = 0x0B;  // 0b00001011
+//                         |||
+//                         ||+--- bit 0: output_en = 1 (有効)
+//                         |+---- bit 1: lvl = 1 (Active High)
+//                         +----- bit 2: od = 0 (Push-Pull)
+write_reg(0x53, int1_io_ctrl);  // INT1_IO_CTRL
+```
+
+**Step 2: Data Ready割り込みのマッピング（INT1_MAP_FEAT / INT2_MAP_FEAT）**
+
+INT1_MAP_FEATレジスタ（アドレス 0x56）またはINT2_MAP_FEATレジスタ（アドレス 0x57）で割り込みソースをピンにマッピングします。
+
+**注意**: Data Ready割り込みはINT_MAP_DATAレジスタ（アドレス 0x58）で設定します。
+
+```c
+// INT_MAP_DATA レジスタ（アドレス 0x58）
+uint8_t int_map_data = 0x04;  // 0b00000100
+//                        |
+//                        +--- bit 2: drdy_int1 = 1 (Data Ready → INT1)
+
+write_reg(0x58, int_map_data);
+```
+
+**INT_MAP_DATA レジスタのビット割り当て**:
+- bit 2: `drdy_int1` - Data Ready割り込みをINT1にマッピング
+- bit 6: `drdy_int2` - Data Ready割り込みをINT2にマッピング
+
+**Step 3: Data Ready割り込みの有効化（INT1_INT2_MAP_DATA）**
+
+実際には、Step 2のINT_MAP_DATAレジスタ設定で割り込みがマッピングされます。
+
+#### ESP32側のGPIO割り込み設定
+
+BMI270からの割り込み信号を受け取るには、ESP32側でGPIO割り込みを設定する必要があります。
+
+```c
+// M5StampFlyの場合、INT1ピンはGPIO11に接続されています
+#define BMI270_INT1_PIN 11
+
+// GPIO設定
+gpio_config_t io_conf = {
+    .pin_bit_mask = (1ULL << BMI270_INT1_PIN),
+    .mode = GPIO_MODE_INPUT,
+    .pull_up_en = GPIO_PULLUP_DISABLE,
+    .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    .intr_type = GPIO_INTR_POSEDGE  // Active High: 立ち上がりエッジ
+};
+gpio_config(&io_conf);
+
+// 割り込みハンドラの登録
+gpio_install_isr_service(0);
+gpio_isr_handler_add(BMI270_INT1_PIN, gpio_isr_handler, NULL);
+```
+
+#### 割り込みハンドラの実装
+
+```c
+// 割り込みフラグ（ISRとメインタスク間の通信）
+static volatile bool data_ready = false;
+
+// ISR（割り込みサービスルーチン）
+static void IRAM_ATTR gpio_isr_handler(void* arg) {
+    data_ready = true;
+}
+
+// メインループ
+while (1) {
+    if (data_ready) {
+        data_ready = false;
+
+        // データ読み取り
+        bmi270_accel_t accel;
+        bmi270_gyro_t gyro;
+        bmi270_read_accel(&dev, &accel);
+        bmi270_read_gyro(&dev, &gyro);
+
+        // データ処理...
+    }
+
+    // 割り込み待機（省電力）
+    vTaskDelay(pdMS_TO_TICKS(1));
+}
+```
+
+#### ラッチモードとパルスモード
+
+BMI270の割り込み出力には、ラッチモードとパルスモードがあります。
+
+**パルスモード（デフォルト）**:
+- 割り込み条件発生時、短いパルス（2.5µs）を出力
+- クリア不要、自動的にリセット
+- Data Ready割り込みに適している
+
+**ラッチモード**:
+- 割り込み条件発生時、割り込みピンがHigh（またはLow）を維持
+- INT1_STATUSまたはINT2_STATUSレジスタを読むことでクリア
+- 複数の割り込みソースを扱う場合に有用
+
+Data Ready割り込みでは、通常**パルスモード**を使用します。
+
+#### トラブルシューティング
+
+**症状**: 割り込みが発生しない
+
+**考えられる原因と対策**:
+
+1. **割り込み出力が無効**:
+   - INT1_IO_CTRL の output_en ビットが 0
+   - 対策: output_en = 1 に設定
+
+2. **割り込みマッピングが未設定**:
+   - INT_MAP_DATA レジスタの drdy_int1 ビットが 0
+   - 対策: drdy_int1 = 1 に設定（0x04 を書き込む）
+
+3. **GPIO割り込みタイプの不一致**:
+   - Active Highなのに NEGEDGE で検出している
+   - 対策: INT1_IO_CTRL の lvl ビットとGPIO設定を一致させる
+
+4. **センサーが無効**:
+   - PWR_CTRL で加速度/ジャイロが有効化されていない
+   - 対策: PWR_CTRL = 0x06（加速度+ジャイロ）を設定
+
+**症状**: 割り込みが連続発生する
+
+**考えられる原因と対策**:
+
+1. **データを読み取っていない**:
+   - Data Ready割り込みは新しいデータが準備されるたびに発生
+   - 対策: 割り込みハンドラ内または直後にデータを読み取る
+
+2. **ODRが高すぎる**:
+   - 処理が間に合わず、割り込みが蓄積
+   - 対策: ODRを下げるか、処理を高速化
+
+#### 性能比較：ポーリング vs 割り込み
+
+| 項目 | ポーリング（100ms） | 割り込み |
+|------|------------------|---------|
+| CPU使用率 | 高（常時監視） | 低（イベント駆動） |
+| データ取得タイミング | 不正確（最大100ms遅延） | 正確（ODR同期） |
+| 消費電力 | 高 | 低（スリープ可能） |
+| 実装複雑度 | 低 | 中（GPIO設定必要） |
+| データ取りこぼし | 可能性あり（高ODR時） | なし |
+
+**推奨用途**:
+- **ポーリング**: 簡単なプロトタイプ、低速サンプリング（< 50Hz）
+- **割り込み**: 本番実装、高速サンプリング（≥ 100Hz）、低消費電力が必要な場合
+
 ---
 
 ## 5.0 FIFOを利用した高速データ読み取り

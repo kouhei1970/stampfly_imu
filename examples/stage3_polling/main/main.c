@@ -27,6 +27,9 @@ static const char *TAG = "BMI270_STAGE3";
 #define BMI270_SPI_CLOCK_HZ 10000000  // 10 MHz
 #define PMW3901_CS_PIN      12        // Other device on shared SPI bus
 
+// Output options
+#define OUTPUT_RAW_VALUES   0  // Set to 1 to output raw sensor values (LSB)
+
 // Polling interval
 #define POLLING_INTERVAL_MS 10  // 10ms = 100Hz
 
@@ -175,28 +178,35 @@ void app_main(void)
         }
 
         // Teleplot output format
+#if OUTPUT_RAW_VALUES
         // Accelerometer raw (LSB)
         printf(">acc_raw_x:%d\n", acc_raw.x);
         printf(">acc_raw_y:%d\n", acc_raw.y);
         printf(">acc_raw_z:%d\n", acc_raw.z);
+#endif
 
         // Accelerometer physical (g)
         printf(">acc_x:%.4f\n", accel.x);
         printf(">acc_y:%.4f\n", accel.y);
         printf(">acc_z:%.4f\n", accel.z);
 
+#if OUTPUT_RAW_VALUES
         // Gyroscope raw (LSB)
         printf(">gyr_raw_x:%d\n", gyr_raw.x);
         printf(">gyr_raw_y:%d\n", gyr_raw.y);
         printf(">gyr_raw_z:%d\n", gyr_raw.z);
+#endif
 
         // Gyroscope physical (°/s)
         printf(">gyr_x:%.3f\n", gyro.x);
         printf(">gyr_y:%.3f\n", gyro.y);
         printf(">gyr_z:%.3f\n", gyro.z);
 
-        // Temperature raw (LSB) and physical (°C)
+#if OUTPUT_RAW_VALUES
+        // Temperature raw (LSB)
         printf(">temp_raw:%d\n", temp_raw);
+#endif
+        // Temperature physical (°C)
         printf(">temp:%.2f\n", temperature);
 
         // Wait for next sample
