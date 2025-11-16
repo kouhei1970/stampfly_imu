@@ -193,16 +193,11 @@ static void fifo_read_task(void *arg)
    - 統計情報表示
    - セマフォ待機（次の割り込みまでブロック）
 
-## タイムスタンプと平均値出力
+## 平均値出力
 
-### 実装詳細（Step 3と同じ）
+### 実装詳細
 
 複数フレームを読み取り、**平均値を計算して出力**することでprintf処理のオーバーヘッドを削減します。
-
-**タイムスタンプ:**
-- 初回読み取り時: `g_start_time_us`を現在時刻に設定（基準点）
-- 各割り込み時: 割り込み発生時刻を記録
-- 相対時刻(秒) = (割り込み時刻(us) - g_start_time_us) / 1,000,000
 
 **平均値計算:**
 - 全有効フレームのデータを蓄積
@@ -257,15 +252,14 @@ I (XXX) BMI270_STEP4: Waiting for FIFO watermark interrupts...
 I (XXX) BMI270_STEP4: ----------------------------------------
 I (XXX) BMI270_STEP4: Interrupt #1, FIFO length: 1027 bytes
 I (XXX) BMI270_STEP4: Parsing 79 frames (1027 bytes)
-I (XXX) BMI270_STEP4: Initialized timestamp baseline (t=0.000000s)
 D (XXX) BMI270_STEP4: Config change frame (0x48)
 I (XXX) BMI270_STEP4: Valid frames: 78/79
->gyr_x:0.780000:-0.05
->gyr_y:0.780000:0.12
->gyr_z:0.780000:-0.03
->acc_x:0.780000:0.012
->acc_y:0.780000:-0.024
->acc_z:0.780000:0.995
+>gyr_x:-0.05
+>gyr_y:0.12
+>gyr_z:-0.03
+>acc_x:0.012
+>acc_y:-0.024
+>acc_z:0.995
 I (XXX) BMI270_STEP4: FIFO length after read: 0 bytes
 I (XXX) BMI270_STEP4: Statistics: Total=79 Valid=78 Skip=0 Config=1 Flush=0 Interrupts=1
 ```
@@ -281,8 +275,8 @@ I (XXX) BMI270_STEP4: Statistics: Total=79 Valid=78 Skip=0 Config=1 Flush=0 Inte
 I (XXX) BMI270_STEP4: Interrupt #2, FIFO length: 1014 bytes
 I (XXX) BMI270_STEP4: Parsing 78 frames (1014 bytes)
 I (XXX) BMI270_STEP4: Valid frames: 78/78
->gyr_x:1.560000:-0.06
->gyr_y:1.560000:0.11
+>gyr_x:-0.06
+>gyr_y:0.11
 ...
 I (XXX) BMI270_STEP4: Statistics: Total=157 Valid=156 Skip=0 Config=1 Flush=0 Interrupts=2
 

@@ -64,9 +64,6 @@ static uint32_t g_skip_frames = 0;
 static uint32_t g_config_frames = 0;
 static uint32_t g_interrupt_count = 0;
 
-// Timestamp baseline (for relative timestamps)
-static int64_t g_start_time_us = 0;
-
 // Output decimation (reduce printf frequency)
 #define OUTPUT_DECIMATION 10  // Output every Nth interrupt
 static uint32_t g_output_counter = 0;
@@ -275,15 +272,6 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
 
     ESP_LOGI(TAG, "Parsing %d frames (%u bytes)", num_frames, length);
 
-    // Get current timestamp (for this batch read)
-    int64_t base_time_us = esp_timer_get_time();
-
-    // Initialize baseline timestamp on first call
-    if (g_start_time_us == 0) {
-        g_start_time_us = base_time_us;
-        ESP_LOGI(TAG, "Initialized timestamp baseline (t=0.000000s)");
-    }
-
     // Accumulators for averaging
     double sum_gyr_x = 0.0, sum_gyr_y = 0.0, sum_gyr_z = 0.0;
     double sum_acc_x = 0.0, sum_acc_y = 0.0, sum_acc_z = 0.0;
@@ -325,16 +313,13 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
         double avg_acc_y = sum_acc_y / valid_count;
         double avg_acc_z = sum_acc_z / valid_count;
 
-        // Timestamp in relative seconds
-        double timestamp_sec = (double)(base_time_us - g_start_time_us) / 1000000.0;
-
-        // Teleplot output format (averaged data with timestamp)
-        printf(">gyr_x:%.6f:%.2f\n", timestamp_sec, avg_gyr_x);
-        printf(">gyr_y:%.6f:%.2f\n", timestamp_sec, avg_gyr_y);
-        printf(">gyr_z:%.6f:%.2f\n", timestamp_sec, avg_gyr_z);
-        printf(">acc_x:%.6f:%.3f\n", timestamp_sec, avg_acc_x);
-        printf(">acc_y:%.6f:%.3f\n", timestamp_sec, avg_acc_y);
-        printf(">acc_z:%.6f:%.3f\n", timestamp_sec, avg_acc_z);
+        // Teleplot output format (averaged data without timestamp)
+        printf(">gyr_x:%.2f\n", avg_gyr_x);
+        printf(">gyr_y:%.2f\n", avg_gyr_y);
+        printf(">gyr_z:%.2f\n", avg_gyr_z);
+        printf(">acc_x:%.3f\n", avg_acc_x);
+        printf(">acc_y:%.3f\n", avg_acc_y);
+        printf(">acc_z:%.3f\n", avg_acc_z);
     }
 
     return skip_detected;
