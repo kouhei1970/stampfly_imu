@@ -74,14 +74,20 @@ uint8_t fifo_config_1 = 0xD0;
 source ~/esp/esp-idf/export.sh
 ```
 
-### 2. ビルド
+### 2. ターゲット設定（初回のみ）
 
 ```bash
 cd examples/stage5_fifo/step2_multi_frames
+idf.py set-target esp32s3
+```
+
+### 3. ビルド
+
+```bash
 idf.py build
 ```
 
-### 3. 書き込みとモニタ
+### 4. 書き込みとモニタ
 
 ```bash
 idf.py flash monitor
