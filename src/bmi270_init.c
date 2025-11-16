@@ -49,6 +49,14 @@ esp_err_t bmi270_soft_reset(bmi270_dev_t *dev) {
     ESP_LOGI(TAG, "Waiting %d µs for reset to complete...", BMI270_DELAY_SOFT_RESET_US);
     esp_rom_delay_us(BMI270_DELAY_SOFT_RESET_US);
 
+    // Re-activate SPI mode (soft reset returns sensor to power-on state)
+    ESP_LOGI(TAG, "Re-activating SPI mode after reset...");
+    uint8_t dummy;
+    bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);  // First dummy read
+    vTaskDelay(pdMS_TO_TICKS(5));  // 5ms stabilization
+    bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);  // Second dummy read
+    ESP_LOGI(TAG, "SPI mode re-activated");
+
     // Verify CHIP_ID after reset
     uint8_t chip_id;
     ret = bmi270_read_register(dev, BMI270_REG_CHIP_ID, &chip_id);
