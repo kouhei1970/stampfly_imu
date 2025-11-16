@@ -139,7 +139,7 @@ static esp_err_t configure_fifo_watermark_interrupt(void)
         return ret;
     }
 
-    ESP_LOGI(TAG, "FIFO watermark set to %u bytes (%u frames)", watermark, watermark / FIFO_FRAME_SIZE_HEADER);
+    ESP_LOGD(TAG, "FIFO watermark set to %u bytes (%u frames)", watermark, watermark / FIFO_FRAME_SIZE_HEADER);
 
     // Configure INT1 pin (active high, push-pull, output enabled, latched)
     uint8_t int1_io_ctrl = (1 << 0) | (1 << 1) | (1 << 3);  // bit 0: latch, bit 1: output_en, bit 3: active high
@@ -149,7 +149,7 @@ static esp_err_t configure_fifo_watermark_interrupt(void)
         return ret;
     }
 
-    ESP_LOGI(TAG, "INT1 configured: active high, push-pull, latched mode");
+    ESP_LOGD(TAG, "INT1 configured: active high, push-pull, latched mode");
 
     // Map FIFO watermark interrupt to INT1
     uint8_t int_map_data = (1 << 1);  // bit 1: fwm_int -> INT1
@@ -159,7 +159,7 @@ static esp_err_t configure_fifo_watermark_interrupt(void)
         return ret;
     }
 
-    ESP_LOGI(TAG, "FIFO watermark interrupt mapped to INT1");
+    ESP_LOGD(TAG, "FIFO watermark interrupt mapped to INT1");
 
     // Readback and verify settings
     uint8_t readback_wtm0, readback_wtm1, readback_int1_io, readback_int_map;
@@ -169,7 +169,7 @@ static esp_err_t configure_fifo_watermark_interrupt(void)
     bmi270_read_register(&g_dev, BMI270_REG_INT_MAP_DATA, &readback_int_map);
 
     uint16_t readback_watermark = readback_wtm0 | ((readback_wtm1 & 0x07) << 8);
-    ESP_LOGI(TAG, "Readback - WTM: %u bytes, INT1_IO: 0x%02X, INT_MAP: 0x%02X",
+    ESP_LOGD(TAG, "Readback - WTM: %u bytes, INT1_IO: 0x%02X, INT_MAP: 0x%02X",
              readback_watermark, readback_int1_io, readback_int_map);
 
     return ESP_OK;
@@ -270,7 +270,7 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
     int valid_count = 0;
     bool skip_detected = false;
 
-    ESP_LOGI(TAG, "Parsing %d frames (%u bytes)", num_frames, length);
+    ESP_LOGD(TAG, "Parsing %d frames (%u bytes)", num_frames, length);
 
     // Accumulators for averaging
     double sum_gyr_x = 0.0, sum_gyr_y = 0.0, sum_gyr_z = 0.0;
@@ -302,7 +302,7 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
         }
     }
 
-    ESP_LOGI(TAG, "Valid frames: %d/%d", valid_count, num_frames);
+    ESP_LOGD(TAG, "Valid frames: %d/%d", valid_count, num_frames);
 
     // Calculate average and output (only if we have valid data AND output is enabled)
     if (valid_count > 0 && output_enabled) {
@@ -328,7 +328,7 @@ static void fifo_read_task(void *arg)
 {
     static uint8_t fifo_buffer[FIFO_MAX_SIZE];  // Static to avoid stack overflow
 
-    ESP_LOGI(TAG, "FIFO read task started (waiting for interrupts)");
+    ESP_LOGD(TAG, "FIFO read task started (waiting for interrupts)");
 
     while (1) {
         // Wait for interrupt notification
@@ -378,6 +378,10 @@ static void fifo_read_task(void *arg)
 void app_main(void)
 {
     esp_err_t ret;
+
+    // Set log levels: suppress debug messages by default
+    esp_log_level_set("*", ESP_LOG_INFO);        // Global: INFO and above (WARNING, ERROR)
+    esp_log_level_set(TAG, ESP_LOG_INFO);        // This module: INFO and above
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, " BMI270 Step 4: FIFO Watermark Interrupt");
@@ -450,7 +454,7 @@ void app_main(void)
     // Verify configuration
     uint8_t fifo_config_1_readback;
     bmi270_read_register(&g_dev, BMI270_REG_FIFO_CONFIG_1, &fifo_config_1_readback);
-    ESP_LOGI(TAG, "FIFO_CONFIG_1 readback: 0x%02X (expected 0xD0)", fifo_config_1_readback);
+    ESP_LOGD(TAG, "FIFO_CONFIG_1 readback: 0x%02X (expected 0xD0)", fifo_config_1_readback);
 
     // Step 6: Configure FIFO watermark (but NOT interrupt mapping yet)
     ESP_LOGI(TAG, "Step 6: Configuring FIFO watermark...");
@@ -472,7 +476,7 @@ void app_main(void)
         return;
     }
 
-    ESP_LOGI(TAG, "FIFO watermark set to %u bytes (%u frames)", watermark, watermark / FIFO_FRAME_SIZE_HEADER);
+    ESP_LOGD(TAG, "FIFO watermark set to %u bytes (%u frames)", watermark, watermark / FIFO_FRAME_SIZE_HEADER);
 
     // Configure INT1 pin (but interrupt not mapped yet, so no interrupt will fire)
     uint8_t int1_io_ctrl = (1 << 0) | (1 << 1) | (1 << 3);  // bit 0: latch, bit 1: output_en, bit 3: active high
@@ -481,7 +485,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to write INT1_IO_CTRL");
         return;
     }
-    ESP_LOGI(TAG, "INT1 pin configured (not mapped yet)");
+    ESP_LOGD(TAG, "INT1 pin configured (not mapped yet)");
 
     // Step 7: Configure GPIO INT1
     ESP_LOGI(TAG, "Step 7: Configuring GPIO INT1 (GPIO%d)...", BMI270_INT1_PIN);
@@ -509,7 +513,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to write INT_MAP_DATA");
         return;
     }
-    ESP_LOGI(TAG, "FIFO watermark interrupt mapped to INT1");
+    ESP_LOGD(TAG, "FIFO watermark interrupt mapped to INT1");
 
     // Step 10: Create semaphore for interrupt notification
     fifo_semaphore = xSemaphoreCreateBinary();
@@ -546,7 +550,7 @@ void app_main(void)
         uint32_t current_time = esp_timer_get_time() / 1000000;  // Convert to seconds
         if (current_time - last_status_time >= 10) {
             last_status_time = current_time;
-            ESP_LOGI(TAG, "Status: INT count=%lu, Total=%lu, Valid=%lu, Skip=%lu, Output=%s",
+            ESP_LOGD(TAG, "Status: INT count=%lu, Total=%lu, Valid=%lu, Skip=%lu, Output=%s",
                      g_interrupt_count, g_total_frames, g_valid_frames, g_skip_frames,
                      g_teleplot_enabled ? "ON" : "OFF");
         }
