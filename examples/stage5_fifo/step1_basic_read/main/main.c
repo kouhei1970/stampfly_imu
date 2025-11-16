@@ -69,8 +69,9 @@ static esp_err_t read_fifo_frame(uint8_t *frame_data)
 
 /**
  * @brief Parse and display FIFO frame
+ * @return ESP_OK if frame is valid, ESP_FAIL if invalid header detected
  */
-static void parse_and_display_frame(const uint8_t *frame_data)
+static esp_err_t parse_and_display_frame(const uint8_t *frame_data)
 {
     uint8_t header = frame_data[0];
 
@@ -78,7 +79,8 @@ static void parse_and_display_frame(const uint8_t *frame_data)
 
     if (header != FIFO_HEADER_ACC_GYR) {
         ESP_LOGW(TAG, "Unexpected header! Expected 0x8C, got 0x%02X", header);
-        return;
+        ESP_LOGW(TAG, "This indicates FIFO overflow or config change frame");
+        return ESP_FAIL;
     }
 
     // Parse gyroscope data FIRST (bytes 1-6)
@@ -114,6 +116,8 @@ static void parse_and_display_frame(const uint8_t *frame_data)
     printf(">acc_x:%.3f\n", accel.x);
     printf(">acc_y:%.3f\n", accel.y);
     printf(">acc_z:%.3f\n", accel.z);
+
+    return ESP_OK;
 }
 
 void app_main(void)
@@ -126,16 +130,17 @@ void app_main(void)
 
     // Step 1: Initialize SPI bus
     ESP_LOGI(TAG, "Step 1: Initializing SPI bus...");
-    bmi270_spi_config_t spi_config = {
-        .mosi_pin = BMI270_MOSI_PIN,
-        .miso_pin = BMI270_MISO_PIN,
-        .sclk_pin = BMI270_SCLK_PIN,
-        .cs_pin = BMI270_CS_PIN,
-        .clock_speed_hz = BMI270_SPI_CLOCK_HZ,
-        .other_cs_pin = PMW3901_CS_PIN
+    bmi270_config_t config = {
+        .gpio_mosi = BMI270_MOSI_PIN,
+        .gpio_miso = BMI270_MISO_PIN,
+        .gpio_sclk = BMI270_SCLK_PIN,
+        .gpio_cs = BMI270_CS_PIN,
+        .spi_clock_hz = BMI270_SPI_CLOCK_HZ,
+        .spi_host = SPI2_HOST,
+        .gpio_other_cs = PMW3901_CS_PIN
     };
 
-    ret = bmi270_spi_init(&g_dev, &spi_config);
+    ret = bmi270_spi_init(&g_dev, &config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize SPI");
         return;
@@ -167,29 +172,11 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "Gyroscope configured");
 
-    // Step 5: Enable accelerometer
-    ESP_LOGI(TAG, "Step 5: Enabling accelerometer...");
-    ret = bmi270_enable_accel(&g_dev, true);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to enable accelerometer");
-        return;
-    }
-    ESP_LOGI(TAG, "Accelerometer enabled");
-
-    // Step 6: Enable gyroscope
-    ESP_LOGI(TAG, "Step 6: Enabling gyroscope...");
-    ret = bmi270_enable_gyro(&g_dev, true);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to enable gyroscope");
-        return;
-    }
-    ESP_LOGI(TAG, "Gyroscope enabled");
-
     // Wait for sensors to stabilize
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Step 7: Configure FIFO (ACC+GYR, Header mode, Stream mode)
-    ESP_LOGI(TAG, "Step 7: Configuring FIFO...");
+    // Step 5: Configure FIFO (ACC+GYR, Header mode, Stream mode)
+    ESP_LOGI(TAG, "Step 5: Configuring FIFO...");
 
     // FIFO_CONFIG_0: Stream mode (stop_on_full = 0, default 0x00)
     uint8_t fifo_config_0 = 0x00;
@@ -220,7 +207,7 @@ void app_main(void)
     // Wait for some data to accumulate
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    // Step 8: Start FIFO manual read loop
+    // Step 6: Start FIFO manual read loop
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, " FIFO Manual Read Loop (Teleplot format)");
     ESP_LOGI(TAG, "========================================");
@@ -254,7 +241,15 @@ void app_main(void)
             }
 
             // Parse and display frame
-            parse_and_display_frame(frame_data);
+            ret = parse_and_display_frame(frame_data);
+            if (ret != ESP_OK) {
+                // Invalid header detected - end test
+                ESP_LOGI(TAG, "========================================");
+                ESP_LOGI(TAG, " Step 1 Complete: FIFO basic operation verified");
+                ESP_LOGI(TAG, " Successfully read %lu valid frames", frame_count - 1);
+                ESP_LOGI(TAG, "========================================");
+                return;
+            }
 
             // Read FIFO length again to verify data was consumed
             uint16_t fifo_length_after;
