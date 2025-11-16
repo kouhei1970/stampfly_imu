@@ -105,11 +105,11 @@ extern "C" {
 #define BMI270_DELAY_ACCESS_LOWPOWER_US 1000    // Register access delay in low-power mode (optimized: 100% reliable, good speed/safety balance)
 
 /* Timeouts (milliseconds) */
-#define BMI270_TIMEOUT_INIT_MS          20      // Initialization timeout
+#define BMI270_TIMEOUT_INIT_MS          150     // Initialization timeout (increased for safety)
 
 /* Configuration File */
 #define BMI270_CONFIG_FILE_SIZE         8192    // Size of config file in bytes
-#define BMI270_CONFIG_BURST_SIZE        32      // Burst write size for config upload (bytes)
+#define BMI270_CONFIG_BURST_SIZE        16      // Burst write size for config upload (bytes, recommended by Bosch)
 
 
 #ifdef __cplusplus

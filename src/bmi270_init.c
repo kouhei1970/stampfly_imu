@@ -149,6 +149,10 @@ esp_err_t bmi270_upload_config_file(bmi270_dev_t *dev) {
         return ret;
     }
 
+    // Wait for sensor to start initialization process
+    ESP_LOGI(TAG, "Waiting for initialization to start...");
+    vTaskDelay(pdMS_TO_TICKS(10));  // 10ms wait for init process to start
+
     return ESP_OK;
 }
 
@@ -171,6 +175,7 @@ esp_err_t bmi270_wait_init_complete(bmi270_dev_t *dev) {
     uint32_t start_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint8_t internal_status;
     esp_err_t ret;
+    int poll_count = 0;
 
     while (1) {
         // Read INTERNAL_STATUS register
@@ -183,11 +188,15 @@ esp_err_t bmi270_wait_init_complete(bmi270_dev_t *dev) {
         // Extract message field (lower 4 bits)
         uint8_t message = internal_status & BMI270_INTERNAL_STATUS_MSG_MASK;
 
-        ESP_LOGI(TAG, "INTERNAL_STATUS = 0x%02X, message = 0x%02X", internal_status, message);
+        // Log every 5th poll to reduce log spam
+        if (poll_count % 5 == 0) {
+            ESP_LOGI(TAG, "INTERNAL_STATUS = 0x%02X, message = 0x%02X", internal_status, message);
+        }
+        poll_count++;
 
         // Check initialization status
         if (message == BMI270_INTERNAL_STATUS_MSG_INIT_OK) {
-            ESP_LOGI(TAG, "✓ Initialization complete (message = 0x01)");
+            ESP_LOGI(TAG, "✓ Initialization complete (message = 0x01) after %d polls", poll_count);
             return ESP_OK;
         } else if (message == BMI270_INTERNAL_STATUS_MSG_INIT_ERR) {
             ESP_LOGE(TAG, "✗ Initialization error (message = 0x02)");
@@ -197,12 +206,12 @@ esp_err_t bmi270_wait_init_complete(bmi270_dev_t *dev) {
         // Check timeout
         uint32_t elapsed_ms = (xTaskGetTickCount() * portTICK_PERIOD_MS) - start_time_ms;
         if (elapsed_ms >= BMI270_TIMEOUT_INIT_MS) {
-            ESP_LOGE(TAG, "✗ Initialization timeout after %lu ms", elapsed_ms);
+            ESP_LOGE(TAG, "✗ Initialization timeout after %lu ms (%d polls)", elapsed_ms, poll_count);
             return ESP_ERR_TIMEOUT;
         }
 
-        // Wait 1ms before polling again
-        vTaskDelay(pdMS_TO_TICKS(1));
+        // Wait 2ms before polling again
+        vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
 
