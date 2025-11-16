@@ -313,13 +313,9 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
         double avg_acc_y = sum_acc_y / valid_count;
         double avg_acc_z = sum_acc_z / valid_count;
 
-        // Teleplot output format (averaged data without timestamp)
-        printf(">gyr_x:%.2f\n", avg_gyr_x);
-        printf(">gyr_y:%.2f\n", avg_gyr_y);
-        printf(">gyr_z:%.2f\n", avg_gyr_z);
-        printf(">acc_x:%.3f\n", avg_acc_x);
-        printf(">acc_y:%.3f\n", avg_acc_y);
-        printf(">acc_z:%.3f\n", avg_acc_z);
+        // Teleplot output format (averaged data without timestamp, single printf)
+        printf(">gyr_x:%.2f\n>gyr_y:%.2f\n>gyr_z:%.2f\n>acc_x:%.3f\n>acc_y:%.3f\n>acc_z:%.3f\n",
+               avg_gyr_x, avg_gyr_y, avg_gyr_z, avg_acc_x, avg_acc_y, avg_acc_z);
     }
 
     return skip_detected;
