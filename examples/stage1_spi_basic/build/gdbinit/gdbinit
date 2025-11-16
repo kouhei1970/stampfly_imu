@@ -1,0 +1,2 @@
+source /Users/kouhei/tmp/github/stampfly_imu/examples/stage1_spi_basic/build/gdbinit/symbols
+source /Users/kouhei/tmp/github/stampfly_imu/examples/stage1_spi_basic/build/gdbinit/connect

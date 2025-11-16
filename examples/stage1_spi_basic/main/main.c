@@ -156,6 +156,7 @@ void app_main(void) {
         .gpio_cs = 46,
         .spi_clock_hz = 10000000,  // 10 MHz
         .spi_host = SPI2_HOST,
+        .gpio_other_cs = 12,       // PMW3901 CS (deactivate for shared SPI bus)
     };
 
     // Step 1: Initialize SPI

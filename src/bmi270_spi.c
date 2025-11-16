@@ -14,6 +14,7 @@
 #include "bmi270_types.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "BMI270_SPI";
 
@@ -31,6 +32,26 @@ esp_err_t bmi270_spi_init(bmi270_dev_t *dev, const bmi270_config_t *config) {
     }
 
     esp_err_t ret;
+
+    // Deactivate other devices on shared SPI bus (if specified)
+    if (config->gpio_other_cs >= 0) {
+        ESP_LOGI(TAG, "Deactivating other SPI device on GPIO%d (shared bus)", config->gpio_other_cs);
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << config->gpio_other_cs),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ret = gpio_config(&io_conf);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to configure other CS GPIO: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        // Set CS HIGH (inactive) for other device
+        gpio_set_level(config->gpio_other_cs, 1);
+        ESP_LOGI(TAG, "Other SPI device CS set to HIGH (inactive)");
+    }
 
     // Store GPIO pins
     dev->gpio_mosi = config->gpio_mosi;

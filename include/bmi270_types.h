@@ -45,6 +45,7 @@ typedef struct {
     uint8_t gpio_cs;                     ///< CS GPIO pin (e.g., GPIO46 for StampFly)
     uint32_t spi_clock_hz;               ///< SPI clock frequency (max 10MHz for BMI270)
     spi_host_device_t spi_host;          ///< SPI host (SPI2_HOST or SPI3_HOST)
+    int8_t gpio_other_cs;                ///< CS pin of other device on shared SPI bus (set to -1 if not used, e.g., GPIO12 for PMW3901)
 } bmi270_config_t;
 
 /**
