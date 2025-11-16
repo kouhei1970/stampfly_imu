@@ -42,6 +42,10 @@ extern "C" {
 /* Internal Status */
 #define BMI270_REG_INTERNAL_STATUS      0x21    // Internal status register
 
+/* Temperature Sensor Data Registers */
+#define BMI270_REG_TEMP_MSB             0x22    // Temperature MSB
+#define BMI270_REG_TEMP_LSB             0x23    // Temperature LSB
+
 /* FIFO */
 #define BMI270_REG_FIFO_LENGTH_0        0x24    // FIFO length LSB
 #define BMI270_REG_FIFO_LENGTH_1        0x25    // FIFO length MSB
@@ -49,7 +53,9 @@ extern "C" {
 
 /* Configuration Registers */
 #define BMI270_REG_ACC_CONF             0x40    // Accelerometer configuration
+#define BMI270_REG_ACC_RANGE            0x41    // Accelerometer range
 #define BMI270_REG_GYR_CONF             0x42    // Gyroscope configuration
+#define BMI270_REG_GYR_RANGE            0x43    // Gyroscope range
 
 /* Initialization Registers */
 #define BMI270_REG_INIT_CTRL            0x59    // Initialization control
@@ -110,6 +116,29 @@ extern "C" {
 /* Configuration File */
 #define BMI270_CONFIG_FILE_SIZE         8192    // Size of config file in bytes
 #define BMI270_CONFIG_BURST_SIZE        256     // Burst write size for config upload (bytes, proven reliable)
+
+/* Accelerometer Scale Factors (LSB/g) */
+#define BMI270_ACC_SCALE_2G             16384.0f    // ±2g range
+#define BMI270_ACC_SCALE_4G             8192.0f     // ±4g range
+#define BMI270_ACC_SCALE_8G             4096.0f     // ±8g range
+#define BMI270_ACC_SCALE_16G            2048.0f     // ±16g range
+
+/* Gyroscope Scale Factors (LSB/°/s) */
+#define BMI270_GYR_SCALE_125DPS         262.4f      // ±125°/s range
+#define BMI270_GYR_SCALE_250DPS         131.2f      // ±250°/s range
+#define BMI270_GYR_SCALE_500DPS         65.6f       // ±500°/s range
+#define BMI270_GYR_SCALE_1000DPS        32.8f       // ±1000°/s range
+#define BMI270_GYR_SCALE_2000DPS        16.4f       // ±2000°/s range
+
+/* ACC_CONF Register Bits */
+#define BMI270_ACC_CONF_FILTER_PERF     (1 << 7)    // Filter performance mode (bit 7)
+
+/* GYR_CONF Register Bits */
+#define BMI270_GYR_CONF_FILTER_PERF     (1 << 7)    // Filter performance mode (bit 7)
+
+/* Temperature Sensor Constants */
+#define BMI270_TEMP_OFFSET              23.0f       // Temperature offset (°C)
+#define BMI270_TEMP_SCALE               512.0f      // Temperature scale (LSB/°C)
 
 
 #ifdef __cplusplus

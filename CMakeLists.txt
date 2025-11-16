@@ -3,6 +3,7 @@ idf_component_register(
         "src/bmi270_spi.c"
         "src/bmi270_config_file.c"
         "src/bmi270_init.c"
+        "src/bmi270_data.c"
     INCLUDE_DIRS
         "include"
     REQUIRES

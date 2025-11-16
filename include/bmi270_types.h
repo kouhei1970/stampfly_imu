@@ -33,6 +33,8 @@ typedef struct {
     uint32_t spi_clock_hz;               ///< SPI clock frequency in Hz
     bool initialized;                    ///< SPI initialized (bus setup complete)
     bool init_complete;                  ///< BMI270 initialization complete (normal mode)
+    uint8_t acc_range;                   ///< Current accelerometer range setting
+    uint8_t gyr_range;                   ///< Current gyroscope range setting
 } bmi270_dev_t;
 
 /**

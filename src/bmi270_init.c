@@ -9,6 +9,7 @@
 #include "bmi270_init.h"
 #include "bmi270_defs.h"
 #include "bmi270_config_file.h"
+#include "bmi270_data.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
@@ -275,22 +276,42 @@ esp_err_t bmi270_init(bmi270_dev_t *dev) {
         return ret;
     }
 
-    // Step 4: Enable accelerometer and gyroscope
+    // Step 4: Enable accelerometer, gyroscope, and temperature sensor
     ESP_LOGI(TAG, "Step 4: Enable sensors");
-    uint8_t pwr_ctrl = BMI270_PWR_CTRL_ACC_EN | BMI270_PWR_CTRL_GYR_EN;
+    uint8_t pwr_ctrl = BMI270_PWR_CTRL_ACC_EN | BMI270_PWR_CTRL_GYR_EN | BMI270_PWR_CTRL_TEMP_EN;
     ret = bmi270_write_register(dev, BMI270_REG_PWR_CTRL, pwr_ctrl);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to enable sensors");
         return ret;
     }
 
-    ESP_LOGI(TAG, "Accelerometer and gyroscope enabled (PWR_CTRL = 0x%02X)", pwr_ctrl);
+    ESP_LOGI(TAG, "Accelerometer, gyroscope, and temperature enabled (PWR_CTRL = 0x%02X)", pwr_ctrl);
 
     // Wait for sensors to stabilize (2ms)
     vTaskDelay(pdMS_TO_TICKS(2));
 
     // Step 5: Mark initialization complete (switch to normal mode timing)
     bmi270_set_init_complete(dev);
+
+    // Step 6: Read and store default range settings
+    ESP_LOGI(TAG, "Step 6: Read default range settings");
+
+    bmi270_acc_range_t acc_range;
+    bmi270_gyr_range_t gyr_range;
+
+    ret = bmi270_get_accel_range(dev, &acc_range);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read accelerometer range, using default ±2g");
+        dev->acc_range = BMI270_ACC_RANGE_2G;
+    }
+
+    ret = bmi270_get_gyro_range(dev, &gyr_range);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read gyroscope range, using default ±2000°/s");
+        dev->gyr_range = BMI270_GYR_RANGE_2000DPS;
+    }
+
+    ESP_LOGI(TAG, "Default ranges: ACC=0x%02X, GYR=0x%02X", dev->acc_range, dev->gyr_range);
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, " ✓ BMI270 Initialization Complete");
