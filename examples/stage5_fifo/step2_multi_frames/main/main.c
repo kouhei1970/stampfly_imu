@@ -246,7 +246,7 @@ void app_main(void)
     ESP_LOGI(TAG, " FIFO Multi-Frame Read Loop (Teleplot format)");
     ESP_LOGI(TAG, "========================================");
 
-    uint8_t fifo_buffer[FIFO_MAX_SIZE];
+    static uint8_t fifo_buffer[FIFO_MAX_SIZE];  // Static to avoid stack overflow
     uint32_t loop_count = 0;
 
     while (1) {
