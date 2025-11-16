@@ -94,7 +94,7 @@ extern "C" {
 #define BMI270_DELAY_SOFT_RESET_US      2000    // Soft reset delay
 #define BMI270_DELAY_WRITE_NORMAL_US    2       // Write delay in normal mode
 #define BMI270_DELAY_WRITE_SUSPEND_US   450     // Write delay in suspend mode (minimum)
-#define BMI270_DELAY_ACCESS_LOWPOWER_US 1000    // Register access delay in low-power mode (with safety margin)
+#define BMI270_DELAY_ACCESS_LOWPOWER_US 5000    // Register access delay in low-power mode (increased for testing)
 
 /* Timeouts (milliseconds) */
 #define BMI270_TIMEOUT_INIT_MS          20      // Initialization timeout
