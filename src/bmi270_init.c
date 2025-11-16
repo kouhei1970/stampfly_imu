@@ -111,8 +111,9 @@ esp_err_t bmi270_upload_config_file(bmi270_dev_t *dev) {
         return ret;
     }
 
-    // Step 3: Upload config file in bursts
-    ESP_LOGI(TAG, "Uploading config file in %d-byte bursts...", BMI270_CONFIG_BURST_SIZE);
+    // Step 3: Upload config file in bursts with INIT_ADDR updates
+    ESP_LOGI(TAG, "Uploading config file (%d bytes, %d-byte chunks)...",
+             BMI270_CONFIG_FILE_SIZE, BMI270_CONFIG_BURST_SIZE);
 
     size_t bytes_written = 0;
     while (bytes_written < BMI270_CONFIG_FILE_SIZE) {
@@ -121,6 +122,21 @@ esp_err_t bmi270_upload_config_file(bmi270_dev_t *dev) {
             chunk_size = BMI270_CONFIG_FILE_SIZE - bytes_written;
         }
 
+        // Set INIT_ADDR for this chunk (word addressing: index / 2)
+        uint16_t index = bytes_written;
+        uint8_t addr_buf[2] = {
+            (uint8_t)((index / 2) & 0x0F),    // INIT_ADDR_0: bits 0-3 only
+            (uint8_t)((index / 2) >> 4)        // INIT_ADDR_1: bits 4-11
+        };
+
+        // Write INIT_ADDR (2 bytes starting from 0x5B)
+        ret = bmi270_write_burst(dev, BMI270_REG_INIT_ADDR_0, addr_buf, 2);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set INIT_ADDR at offset %d", bytes_written);
+            return ret;
+        }
+
+        // Write config data chunk
         ret = bmi270_write_burst(dev, BMI270_REG_INIT_DATA,
                                  &bmi270_config_file[bytes_written],
                                  chunk_size);
@@ -131,8 +147,8 @@ esp_err_t bmi270_upload_config_file(bmi270_dev_t *dev) {
 
         bytes_written += chunk_size;
 
-        // Progress update every 1KB
-        if (bytes_written % 1024 == 0) {
+        // Progress update every 2KB
+        if (bytes_written % 2048 == 0) {
             ESP_LOGI(TAG, "Progress: %d / %d bytes (%.1f%%)",
                      bytes_written, BMI270_CONFIG_FILE_SIZE,
                      (float)bytes_written / BMI270_CONFIG_FILE_SIZE * 100.0f);

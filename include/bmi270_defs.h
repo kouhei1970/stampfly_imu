@@ -109,7 +109,7 @@ extern "C" {
 
 /* Configuration File */
 #define BMI270_CONFIG_FILE_SIZE         8192    // Size of config file in bytes
-#define BMI270_CONFIG_BURST_SIZE        16      // Burst write size for config upload (bytes, recommended by Bosch)
+#define BMI270_CONFIG_BURST_SIZE        256     // Burst write size for config upload (bytes, proven reliable)
 
 
 #ifdef __cplusplus
