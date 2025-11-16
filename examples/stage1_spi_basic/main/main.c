@@ -35,6 +35,7 @@ static const char *TAG = "BMI270_TEST";
 esp_err_t bmi270_spi_init(bmi270_dev_t *dev, const bmi270_config_t *config);
 esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *data);
 esp_err_t bmi270_write_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t data);
+void bmi270_set_lowpower_delay_override(uint32_t delay_us);
 
 /**
  * @brief Test CHIP_ID reading
@@ -108,6 +109,44 @@ static esp_err_t test_communication_stability(bmi270_dev_t *dev, int iterations)
         ESP_LOGE(TAG, "✗ Communication stability test FAILED");
         return ESP_FAIL;
     }
+}
+
+/**
+ * @brief Test delay optimization
+ *
+ * Tests various delay times to find the minimum reliable delay.
+ *
+ * @param dev Pointer to BMI270 device
+ * @param delay_us Delay time to test in microseconds
+ * @param iterations Number of test iterations
+ * @return Success rate (0-100)
+ */
+static float test_delay_optimization(bmi270_dev_t *dev, uint32_t delay_us, int iterations) {
+    int success_count = 0;
+    int fail_count = 0;
+    uint8_t chip_id;
+    esp_err_t ret;
+
+    // Set the delay override
+    bmi270_set_lowpower_delay_override(delay_us);
+
+    for (int i = 0; i < iterations; i++) {
+        ret = bmi270_read_register(dev, BMI270_REG_CHIP_ID, &chip_id);
+
+        if (ret == ESP_OK && chip_id == BMI270_CHIP_ID) {
+            success_count++;
+        } else {
+            fail_count++;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));  // 10ms delay between reads
+    }
+
+    // Clear override
+    bmi270_set_lowpower_delay_override(0);
+
+    float success_rate = (float)success_count / iterations * 100.0f;
+    return success_rate;
 }
 
 /**
@@ -202,6 +241,44 @@ void app_main(void) {
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Stage 1 completed successfully!");
     ESP_LOGI(TAG, "BMI270 SPI communication is working correctly.");
+    ESP_LOGI(TAG, "");
+
+    // Step 5: Delay optimization experiment
+    ESP_LOGI(TAG, "Step 5: Delay optimization experiment...");
+    ESP_LOGI(TAG, "Testing various delay times to find optimal value");
+    ESP_LOGI(TAG, "");
+
+    // Define test delays (in microseconds)
+    uint32_t test_delays[] = {
+        50,    // 50µs
+        100,   // 100µs
+        200,   // 200µs
+        450,   // 450µs (datasheet minimum)
+        500,   // 500µs
+        1000,  // 1ms
+        2000,  // 2ms
+        5000,  // 5ms (current default)
+    };
+    int num_delays = sizeof(test_delays) / sizeof(test_delays[0]);
+    int iterations_per_test = 100;
+
+    ESP_LOGI(TAG, "┌──────────┬──────────┬──────────┐");
+    ESP_LOGI(TAG, "│ Delay    │ Success  │ Status   │");
+    ESP_LOGI(TAG, "├──────────┼──────────┼──────────┤");
+
+    for (int i = 0; i < num_delays; i++) {
+        uint32_t delay = test_delays[i];
+
+        ESP_LOGI(TAG, "Testing %lu µs...", delay);
+        float success_rate = test_delay_optimization(&dev, delay, iterations_per_test);
+
+        const char *status = (success_rate == 100.0f) ? "PASS ✓" : "FAIL ✗";
+        ESP_LOGI(TAG, "│ %5lu µs │ %6.1f%% │ %8s │", delay, success_rate, status);
+    }
+
+    ESP_LOGI(TAG, "└──────────┴──────────┴──────────┘");
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Delay optimization experiment completed!");
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Next step: Stage 2 - Initialization sequence");
 }

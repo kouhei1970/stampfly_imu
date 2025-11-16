@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "bmi270_stage1_spi_basic",
-    "project_version":    "4036c18-dirty",
+    "project_version":    "433b0d4-dirty",
     "project_path":       "/Users/kouhei/tmp/github/stampfly_imu/examples/stage1_spi_basic",
     "idf_path":           "/Users/kouhei/esp/esp-idf",
     "build_dir":          "/Users/kouhei/tmp/github/stampfly_imu/examples/stage1_spi_basic/build",

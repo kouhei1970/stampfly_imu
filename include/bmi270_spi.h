@@ -77,6 +77,16 @@ esp_err_t bmi270_write_burst(bmi270_dev_t *dev, uint8_t reg_addr, const uint8_t 
  */
 void bmi270_set_init_complete(bmi270_dev_t *dev);
 
+/**
+ * @brief Override low-power mode delay for testing (experimental)
+ *
+ * Temporarily override the low-power mode delay time for optimization experiments.
+ * This function is for testing purposes only.
+ *
+ * @param delay_us New delay time in microseconds (0 = use default)
+ */
+void bmi270_set_lowpower_delay_override(uint32_t delay_us);
+
 #ifdef __cplusplus
 }
 #endif

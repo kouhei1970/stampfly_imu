@@ -18,6 +18,9 @@
 
 static const char *TAG = "BMI270_SPI";
 
+// Experimental: Low-power mode delay override (0 = use default from bmi270_defs.h)
+static uint32_t g_lowpower_delay_override = 0;
+
 /**
  * @brief Initialize SPI bus and add BMI270 device
  *
@@ -174,8 +177,9 @@ esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *dat
             // Normal mode: 2µs
             esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
         } else {
-            // Low-power mode: 1000µs (with safety margin)
-            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+            // Low-power mode: use override if set, otherwise use default
+            uint32_t delay = (g_lowpower_delay_override > 0) ? g_lowpower_delay_override : BMI270_DELAY_ACCESS_LOWPOWER_US;
+            esp_rom_delay_us(delay);
         }
     } else {
         ESP_LOGE(TAG, "SPI read failed: %s", esp_err_to_name(ret));
@@ -229,8 +233,9 @@ esp_err_t bmi270_write_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t dat
             // Normal mode: 2µs
             esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
         } else {
-            // Low-power mode: 1000µs (with safety margin)
-            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+            // Low-power mode: use override if set, otherwise use default
+            uint32_t delay = (g_lowpower_delay_override > 0) ? g_lowpower_delay_override : BMI270_DELAY_ACCESS_LOWPOWER_US;
+            esp_rom_delay_us(delay);
         }
     } else {
         ESP_LOGE(TAG, "SPI write failed: %s", esp_err_to_name(ret));
@@ -369,8 +374,9 @@ esp_err_t bmi270_write_burst(bmi270_dev_t *dev, uint8_t reg_addr, const uint8_t 
             // Normal mode: 2µs
             esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
         } else {
-            // Low-power mode: 1000µs (with safety margin)
-            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+            // Low-power mode: use override if set, otherwise use default
+            uint32_t delay = (g_lowpower_delay_override > 0) ? g_lowpower_delay_override : BMI270_DELAY_ACCESS_LOWPOWER_US;
+            esp_rom_delay_us(delay);
         }
     } else {
         ESP_LOGE(TAG, "SPI burst write failed: %s", esp_err_to_name(ret));
@@ -391,5 +397,19 @@ void bmi270_set_init_complete(bmi270_dev_t *dev) {
     if (dev != NULL) {
         dev->init_complete = true;
         ESP_LOGI(TAG, "BMI270 initialization complete - switched to normal mode timing");
+    }
+}
+
+/**
+ * @brief Override low-power mode delay for testing (experimental)
+ *
+ * @param delay_us New delay time in microseconds (0 = use default)
+ */
+void bmi270_set_lowpower_delay_override(uint32_t delay_us) {
+    g_lowpower_delay_override = delay_us;
+    if (delay_us > 0) {
+        ESP_LOGI(TAG, "Low-power delay override set to %lu µs (experimental)", delay_us);
+    } else {
+        ESP_LOGI(TAG, "Low-power delay override cleared (using default)");
     }
 }
