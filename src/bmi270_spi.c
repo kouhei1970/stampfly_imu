@@ -92,6 +92,7 @@ esp_err_t bmi270_spi_init(bmi270_dev_t *dev, const bmi270_config_t *config) {
     ESP_LOGI(TAG, "SPI Clock: %lu Hz", config->spi_clock_hz);
 
     dev->initialized = true;
+    dev->init_complete = false;  // BMI270 initialization not yet complete (low-power mode)
     return ESP_OK;
 }
 
@@ -139,9 +140,22 @@ esp_err_t bmi270_read_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t *dat
     esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &trans);
 
     if (ret == ESP_OK) {
+        // DEBUG: Log all received bytes for troubleshooting
+        ESP_LOGI(TAG, "Read reg 0x%02X: rx[0]=0x%02X rx[1]=0x%02X rx[2]=0x%02X",
+                 reg_addr, rx_data[0], rx_data[1], rx_data[2]);
+
         // rx_data[0] = Command echo (discard)
         // rx_data[1] = Dummy (discard)
         *data = rx_data[2];  // ★ Byte 3 is valid data
+
+        // Wait after read (timing depends on initialization state)
+        if (dev->init_complete) {
+            // Normal mode: 2µs
+            esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
+        } else {
+            // Low-power mode: 1000µs (with safety margin)
+            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+        }
     } else {
         ESP_LOGE(TAG, "SPI read failed: %s", esp_err_to_name(ret));
     }
@@ -189,8 +203,14 @@ esp_err_t bmi270_write_register(bmi270_dev_t *dev, uint8_t reg_addr, uint8_t dat
     esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &trans);
 
     if (ret == ESP_OK) {
-        // Wait after write (normal mode: 2µs)
-        esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
+        // Wait after write (timing depends on initialization state)
+        if (dev->init_complete) {
+            // Normal mode: 2µs
+            esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
+        } else {
+            // Low-power mode: 1000µs (with safety margin)
+            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+        }
     } else {
         ESP_LOGE(TAG, "SPI write failed: %s", esp_err_to_name(ret));
     }
@@ -323,11 +343,32 @@ esp_err_t bmi270_write_burst(bmi270_dev_t *dev, uint8_t reg_addr, const uint8_t 
     heap_caps_free(tx_buffer);
 
     if (ret == ESP_OK) {
-        // Wait after write (suspend mode: 450µs for safety)
-        esp_rom_delay_us(BMI270_DELAY_WRITE_SUSPEND_US);
+        // Wait after write (timing depends on initialization state)
+        if (dev->init_complete) {
+            // Normal mode: 2µs
+            esp_rom_delay_us(BMI270_DELAY_WRITE_NORMAL_US);
+        } else {
+            // Low-power mode: 1000µs (with safety margin)
+            esp_rom_delay_us(BMI270_DELAY_ACCESS_LOWPOWER_US);
+        }
     } else {
         ESP_LOGE(TAG, "SPI burst write failed: %s", esp_err_to_name(ret));
     }
 
     return ret;
+}
+
+/**
+ * @brief Mark BMI270 initialization as complete
+ *
+ * Call this function after BMI270 initialization sequence is complete
+ * to switch to normal mode timing (2µs instead of 1000µs).
+ *
+ * @param dev Pointer to BMI270 device structure
+ */
+void bmi270_set_init_complete(bmi270_dev_t *dev) {
+    if (dev != NULL) {
+        dev->init_complete = true;
+        ESP_LOGI(TAG, "BMI270 initialization complete - switched to normal mode timing");
+    }
 }

@@ -31,7 +31,8 @@ typedef struct {
     uint8_t gpio_sclk;                   ///< SCLK GPIO pin number
     uint8_t gpio_cs;                     ///< CS GPIO pin number
     uint32_t spi_clock_hz;               ///< SPI clock frequency in Hz
-    bool initialized;                    ///< Initialization status
+    bool initialized;                    ///< SPI initialized (bus setup complete)
+    bool init_complete;                  ///< BMI270 initialization complete (normal mode)
 } bmi270_dev_t;
 
 /**
