@@ -505,8 +505,16 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // Step 9: NOW map FIFO watermark interrupt to INT1
-    ESP_LOGI(TAG, "Step 9: Mapping FIFO watermark interrupt to INT1...");
+    // Step 9: Create semaphore for interrupt notification (BEFORE mapping interrupt)
+    ESP_LOGI(TAG, "Step 9: Creating semaphore for interrupt notification...");
+    fifo_semaphore = xSemaphoreCreateBinary();
+    if (fifo_semaphore == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore");
+        return;
+    }
+
+    // Step 10: NOW map FIFO watermark interrupt to INT1
+    ESP_LOGI(TAG, "Step 10: Mapping FIFO watermark interrupt to INT1...");
     uint8_t int_map_data = (1 << 1);  // bit 1: fwm_int -> INT1
     ret = bmi270_write_register(&g_dev, BMI270_REG_INT_MAP_DATA, int_map_data);
     if (ret != ESP_OK) {
@@ -514,13 +522,6 @@ void app_main(void)
         return;
     }
     ESP_LOGD(TAG, "FIFO watermark interrupt mapped to INT1");
-
-    // Step 10: Create semaphore for interrupt notification
-    fifo_semaphore = xSemaphoreCreateBinary();
-    if (fifo_semaphore == NULL) {
-        ESP_LOGE(TAG, "Failed to create semaphore");
-        return;
-    }
 
     // Step 11: Create FIFO read task
     ESP_LOGI(TAG, "Step 11: Creating FIFO read task...");
