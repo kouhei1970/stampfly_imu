@@ -32,14 +32,20 @@ ESP-IDF SPI Masterドライバを使用してBMI270との基本的なSPI通信�
 source ~/esp/esp-idf/export.sh
 ```
 
-### 2. ビルド
+### 2. ターゲット設定（初回のみ）
 
 ```bash
 cd examples/stage1_spi_basic
+idf.py set-target esp32s3
+```
+
+### 3. ビルド
+
+```bash
 idf.py build
 ```
 
-### 3. フラッシュ＆モニター
+### 4. フラッシュ＆モニター
 
 ```bash
 idf.py flash monitor
