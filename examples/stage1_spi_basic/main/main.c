@@ -116,6 +116,9 @@ static esp_err_t test_communication_stability(bmi270_dev_t *dev, int iterations)
  * The BMI270 powers up in I2C mode by default. A dummy SPI read
  * triggers the sensor to switch to SPI mode.
  *
+ * IMPORTANT: Before initialization, BMI270 is in low-power mode,
+ * requiring 450µs (5ms for safety) wait after each register access.
+ *
  * @param dev Pointer to BMI270 device
  */
 static void perform_dummy_read(bmi270_dev_t *dev) {
@@ -125,7 +128,10 @@ static void perform_dummy_read(bmi270_dev_t *dev) {
 
     // First read may fail as sensor switches modes
     bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);
-    vTaskDelay(pdMS_TO_TICKS(1));
+
+    // Wait for sensor to stabilize in low-power mode (5ms)
+    ESP_LOGI(TAG, "Waiting 5ms for sensor stabilization...");
+    vTaskDelay(pdMS_TO_TICKS(5));
 
     // Second read should succeed
     bmi270_read_register(dev, BMI270_REG_CHIP_ID, &dummy);
@@ -161,6 +167,10 @@ void app_main(void) {
     }
     ESP_LOGI(TAG, "✓ SPI initialized successfully");
     ESP_LOGI(TAG, "");
+
+    // Wait for BMI270 power-on (450µs min, 5ms for safety)
+    ESP_LOGI(TAG, "Waiting 5ms for BMI270 power-on...");
+    vTaskDelay(pdMS_TO_TICKS(5));
 
     // Step 2: Perform dummy read to activate SPI mode
     ESP_LOGI(TAG, "Step 2: Activating SPI mode...");
