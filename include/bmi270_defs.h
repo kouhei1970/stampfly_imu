@@ -46,10 +46,17 @@ extern "C" {
 #define BMI270_REG_TEMP_MSB             0x22    // Temperature MSB
 #define BMI270_REG_TEMP_LSB             0x23    // Temperature LSB
 
-/* FIFO */
-#define BMI270_REG_FIFO_LENGTH_0        0x24    // FIFO length LSB
-#define BMI270_REG_FIFO_LENGTH_1        0x25    // FIFO length MSB
+/* FIFO Status Registers */
+#define BMI270_REG_FIFO_LENGTH_0        0x24    // FIFO length LSB (read-only)
+#define BMI270_REG_FIFO_LENGTH_1        0x25    // FIFO length MSB (read-only)
 #define BMI270_REG_FIFO_DATA            0x26    // FIFO data read
+
+/* FIFO Configuration Registers */
+#define BMI270_REG_FIFO_DOWNS           0x45    // FIFO downsampling configuration
+#define BMI270_REG_FIFO_WTM_0           0x46    // FIFO watermark threshold LSB
+#define BMI270_REG_FIFO_WTM_1           0x47    // FIFO watermark threshold MSB
+#define BMI270_REG_FIFO_CONFIG_0        0x48    // FIFO configuration 0
+#define BMI270_REG_FIFO_CONFIG_1        0x49    // FIFO configuration 1
 
 /* Configuration Registers */
 #define BMI270_REG_ACC_CONF             0x40    // Accelerometer configuration
@@ -108,6 +115,7 @@ extern "C" {
 
 /* Commands */
 #define BMI270_CMD_SOFT_RESET           0xB6    // Soft reset command
+#define BMI270_CMD_FIFO_FLUSH           0xB0    // FIFO flush command
 
 /* Timing Constants (microseconds) */
 #define BMI270_DELAY_POWER_ON_US        450     // Power-on delay
@@ -156,8 +164,32 @@ extern "C" {
 #define BMI270_INT_LATCH_ENABLED        0x01        // Latched mode
 
 /* INT_MAP_DATA Register Bits */
+#define BMI270_FIFO_WM_INT1             (1 << 1)    // Map FIFO Watermark to INT1
 #define BMI270_DRDY_INT1                (1 << 2)    // Map Data Ready to INT1
+#define BMI270_FIFO_WM_INT2             (1 << 5)    // Map FIFO Watermark to INT2
 #define BMI270_DRDY_INT2                (1 << 6)    // Map Data Ready to INT2
+
+/* FIFO_CONFIG_0 Register Bits */
+#define BMI270_FIFO_STOP_ON_FULL        (1 << 0)    // FIFO stops on full (1) or overwrites (0)
+
+/* FIFO_CONFIG_1 Register Bits */
+#define BMI270_FIFO_ACC_EN              (1 << 6)    // Enable accelerometer data in FIFO
+#define BMI270_FIFO_GYR_EN              (1 << 7)    // Enable gyroscope data in FIFO
+#define BMI270_FIFO_HEADER_EN           (1 << 4)    // Enable frame headers in FIFO
+
+/* FIFO Frame Headers (Header Mode) */
+#define BMI270_FIFO_HEAD_SKIP           0x40        // Skip frame
+#define BMI270_FIFO_HEAD_SENSOR_TIME    0x44        // Sensor time frame
+#define BMI270_FIFO_HEAD_CONFIG_CHANGE  0x48        // Configuration change
+#define BMI270_FIFO_HEAD_ACC            0x84        // Accelerometer frame (0b10000100)
+#define BMI270_FIFO_HEAD_GYR            0x88        // Gyroscope frame (0b10001000)
+#define BMI270_FIFO_HEAD_ACC_GYR        0x8C        // Accelerometer + Gyroscope frame (0b10001100)
+
+/* FIFO Constants */
+#define BMI270_FIFO_SIZE                2048        // FIFO hardware buffer size (bytes)
+#define BMI270_FIFO_FRAME_ACC_SIZE      7           // Accelerometer frame size (1 header + 6 data)
+#define BMI270_FIFO_FRAME_GYR_SIZE      7           // Gyroscope frame size (1 header + 6 data)
+#define BMI270_FIFO_FRAME_ACC_GYR_SIZE  13          // Accel+Gyro frame size (1 header + 6 acc + 6 gyr)
 
 
 #ifdef __cplusplus

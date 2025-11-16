@@ -171,6 +171,46 @@ esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data) {
 }
 
 /**
+ * @brief Convert raw accelerometer data to physical units (g)
+ */
+esp_err_t bmi270_convert_accel_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_accel_t *accel) {
+    if (dev == NULL || raw == NULL || accel == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_convert_accel_raw");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Get scale factor based on current range
+    float scale = bmi270_get_accel_scale(dev->acc_range);
+
+    // Convert to physical units (g)
+    accel->x = (float)raw->x / scale;
+    accel->y = (float)raw->y / scale;
+    accel->z = (float)raw->z / scale;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Convert raw gyroscope data to physical units (°/s)
+ */
+esp_err_t bmi270_convert_gyro_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro) {
+    if (dev == NULL || raw == NULL || gyro == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_convert_gyro_raw");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Get scale factor based on current range
+    float scale = bmi270_get_gyro_scale(dev->gyr_range);
+
+    // Convert to physical units (°/s)
+    gyro->x = (float)raw->x / scale;
+    gyro->y = (float)raw->y / scale;
+    gyro->z = (float)raw->z / scale;
+
+    return ESP_OK;
+}
+
+/**
  * @brief Read temperature sensor data in °C
  */
 esp_err_t bmi270_read_temperature(bmi270_dev_t *dev, float *temperature) {

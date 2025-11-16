@@ -159,6 +159,32 @@ esp_err_t bmi270_read_accel(bmi270_dev_t *dev, bmi270_accel_t *data);
 esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data);
 
 /**
+ * @brief Convert raw accelerometer data to physical units (g)
+ *
+ * This function converts raw accelerometer data to physical units
+ * based on the current range setting. Useful for FIFO data processing.
+ *
+ * @param[in]  dev   Pointer to BMI270 device structure
+ * @param[in]  raw   Pointer to raw data structure
+ * @param[out] accel Pointer to accelerometer data structure (units: g)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t bmi270_convert_accel_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_accel_t *accel);
+
+/**
+ * @brief Convert raw gyroscope data to physical units (°/s)
+ *
+ * This function converts raw gyroscope data to physical units
+ * based on the current range setting. Useful for FIFO data processing.
+ *
+ * @param[in]  dev  Pointer to BMI270 device structure
+ * @param[in]  raw  Pointer to raw data structure
+ * @param[out] gyro Pointer to gyroscope data structure (units: °/s)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t bmi270_convert_gyro_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro);
+
+/**
  * @brief Read temperature sensor data in °C
  *
  * This function reads raw temperature data and converts it to physical units.

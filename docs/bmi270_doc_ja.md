@@ -788,6 +788,285 @@ Data Ready割り込みでは、通常**パルスモード**を使用します。
 - **ポーリング**: 簡単なプロトタイプ、低速サンプリング（< 50Hz）
 - **割り込み**: 本番実装、高速サンプリング（≥ 100Hz）、低消費電力が必要な場合
 
+### 4.8 FIFO（First-In First-Out）バッファ
+
+FIFOは、BMI270の1024バイトのハードウェアバッファで、複数のセンサーサンプルをバッチ処理することでSPI通信のオーバーヘッドを大幅に削減します。
+
+#### FIFOの利点
+
+| 利点 | 説明 |
+|------|------|
+| **高速サンプリング対応** | 800Hz以上の高ODRでもデータ損失なし |
+| **SPI効率化** | 複数サンプルを一度に読み取り（バースト読み取り） |
+| **低消費電力** | MCUをスリープさせ、ウォーターマーク割り込みで起動 |
+| **タイムスタンプ精度** | センサー内部で正確なタイミングでサンプリング |
+
+#### FIFOレジスタ
+
+| レジスタ | アドレス | 機能 |
+|---------|---------|------|
+| FIFO_CONFIG_0 | 0x48 | FIFO動作モード設定 |
+| FIFO_CONFIG_1 | 0x49 | センサー有効化、ヘッダーモード |
+| FIFO_DOWNS | 0x45 | ダウンサンプリング設定 |
+| FIFO_WTM_0 | 0x46 | ウォーターマーク LSB（**4バイト単位**） |
+| FIFO_WTM_1 | 0x47 | ウォーターマーク MSB（10-bit値、**4バイト単位**） |
+| FIFO_LENGTH_0 | 0x24 | FIFO内データ量 LSB（読み取り専用、**1バイト単位**） |
+| FIFO_LENGTH_1 | 0x25 | FIFO内データ量 MSB（読み取り専用、**1バイト単位**） |
+| FIFO_DATA | 0x26 | FIFOデータ読み取り |
+
+**重要な注意事項**:
+- **FIFO_WTM（ウォーターマーク）**: レジスタ値は**4バイト単位**です。例えば、512バイトのウォーターマークを設定する場合は、`512 / 4 = 128` をレジスタに書き込みます。
+- **FIFO_LENGTH（データ量）**: レジスタ値は**1バイト単位**です。実際のバイト数がそのまま読み取れます。
+- この単位の違いに注意しないと、ウォーターマーク割り込みが正しく動作しません。
+
+#### FIFOフレーム構造
+
+**ヘッダーモード（推奨）**:
+
+各フレームは1バイトのヘッダー + センサーデータで構成されます。
+
+```
+ヘッダーバイト構造（FIFO_CONFIG_1.fifo_header_en = 1）:
+Bit 7 | Bit 6 | Bit 5 | Bit 4 | Bit 3 | Bit 2 | Bit 1 | Bit 0
+ 1    | frame_type                      | reserved
+
+frame_type:
+- 0b100: 加速度データフレーム（7バイト: ヘッダー1 + データ6）
+- 0b010: ジャイロデータフレーム（7バイト: ヘッダー1 + データ6）
+- 0b110: 加速度+ジャイロデータフレーム（13バイト: ヘッダー1 + データ12）
+```
+
+**加速度+ジャイロフレーム例（13バイト）**:
+```
+[0] ヘッダー: 0x8C (0b10001100 = 加速度+ジャイロ)
+[1-2] GYR_X (LSB, MSB)  ← 注意: ジャイロが先！
+[3-4] GYR_Y (LSB, MSB)
+[5-6] GYR_Z (LSB, MSB)
+[7-8] ACC_X (LSB, MSB)
+[9-10] ACC_Y (LSB, MSB)
+[11-12] ACC_Z (LSB, MSB)
+```
+
+**重要**: BMI270のFIFOでは、加速度+ジャイロフレームの場合、**ジャイロデータが先、加速度データが後**の順序で格納されます。
+
+#### FIFO設定手順
+
+```c
+// Step 1: FIFOモード設定（ストリームモード）
+// fifo_stop_on_full = 0: 満杯時に古いデータを上書き
+uint8_t fifo_config_0 = 0x00;
+bmi270_write_register(dev, 0x48, fifo_config_0);
+
+// Step 2: 加速度+ジャイロをFIFOに格納、ヘッダーモード有効
+// fifo_header_en (bit 4) = 1
+// fifo_acc_en (bit 6) = 1
+// fifo_gyr_en (bit 7) = 1
+uint8_t fifo_config_1 = (1 << 7) | (1 << 6) | (1 << 4);  // 0xD0
+bmi270_write_register(dev, 0x49, fifo_config_1);
+
+// Step 3: ウォーターマーク設定（例: 512バイト）
+// **重要**: ウォーターマークレジスタは「バイト単位」で設定します（4バイトワード単位ではない！）
+// FIFO_WTM_0 (0x46): 下位8ビット (fifo_water_mark_7_0)
+// FIFO_WTM_1 (0x47): 上位5ビット (fifo_water_mark_12_8, bit 4-0)
+// 計算式: ウォーターマークレベル (バイト) = fifo_water_mark_7_0 + fifo_water_mark_12_8 × 256
+// 512バイト ≈ 39フレーム（13バイト/フレーム）
+uint16_t watermark_value = 512;  // バイト単位で直接指定
+bmi270_write_register(dev, 0x46, watermark_value & 0xFF);        // LSB (bits 7-0)
+bmi270_write_register(dev, 0x47, (watermark_value >> 8) & 0x1F); // MSB (bits 12-8, 13ビット値)
+
+// Step 4: ウォーターマーク割り込みを有効化（オプション）
+// **重要**: FIFO割り込みは INT_MAP_DATA (0x58) で設定します
+// INT_MAP_FEAT (0x56/0x57) は高度なフィーチャー（activity recognition等）専用です
+uint8_t int_map_data;
+bmi270_read_register(dev, 0x58, &int_map_data);
+int_map_data |= (1 << 1);  // bit 1: FIFO watermark割り込みをINT1にマップ
+bmi270_write_register(dev, 0x58, int_map_data);
+
+// INT_MAP_DATA (0x58) ビット定義:
+// bit 0: FIFO full → INT1
+// bit 1: FIFO watermark → INT1
+// bit 2: Data ready → INT1
+// bit 4: FIFO full → INT2
+// bit 5: FIFO watermark → INT2
+// bit 6: Data ready → INT2
+```
+
+#### FIFOウォーターマークレジスタ詳細
+
+BMI270では、FIFOの充填レベルが設定値に達したときにホストプロセッサに通知するためのウォーターマーク機能が提供されており、これには2つのレジスタを使用します。
+
+**ウォーターマーク設定レジスタ:**
+
+FIFOウォーターマークレベルは、以下の2つのレジスタの値を組み合わせて設定されます。
+
+1. **`FIFO_WTM_0`** (アドレス 0x46)
+   - **ビット 7-0 (`fifo_water_mark_7_0`)**: ウォーターマークレベルの下位8ビット（読み書き可能）
+
+2. **`FIFO_WTM_1`** (アドレス 0x47)
+   - **ビット 4-0 (`fifo_water_mark_12_8`)**: ウォーターマークレベルの上位5ビット（読み書き可能）
+
+**ウォーターマークレベルの計算と機能:**
+
+ウォーターマークレベルは、FIFOバッファ内に格納された**バイト数**で定義されます。
+
+- **レベルの計算:** ウォーターマークレベルは、`fifo_water_mark_7_0`（0x46）と`fifo_water_mark_12_8`（0x47）の値を組み合わせて計算されます。
+  $$\text{ウォーターマークレベル (バイト)} = \text{fifo\_water\_mark\_7\_0} + \text{fifo\_water\_mark\_12\_8} \times 256$$
+
+- **範囲:** 0〜2047バイト（13ビット値、FIFO最大サイズ2048バイト）
+
+- **機能:** FIFOの充填レベルがこの設定されたウォーターマークレベルと**等しいか、または超えたとき**に、**FIFOウォーターマーク割り込み**が発行されます。
+
+**ウォーターマーク割り込みの使用方法:**
+
+ウォーターマーク機能を使用するには、以下の手順が必要です。
+
+1. **割り込みの有効化とマッピング:**
+   - FIFOウォーターマーク割り込み (`fwm_int`) は、レジスタ**`INT_STATUS_1`**（アドレス 0x1D）によって報告されます。
+   - この割り込みを外部ピン（INT1またはINT2）に出力するには、レジスタ**`INT_MAP_DATA`**（アドレス 0x58）を使用し、`fwm_int1`（INT1ピンへのマッピング）または`fwm_int2`（INT2ピンへのマッピング）を設定する必要があります。
+
+2. **低消費電力モードでの利用:**
+   - 低消費電力モードでFIFOを使用する場合、`PWR_CONF.fifo_self_wakeup=0b1`（FIFO自己ウェイクアップ有効）が設定されており、**FIFOウォーターマーク割り込み**またはFIFOフル割り込みがトリガーされた場合、FIFOデータ読み出しに関する高度な省電力設定の制約（`PWR_CONF.adv_power_save=0b1`の制約）が解除されます。
+   - これにより、ホストは低消費電力モードを解除することなく、単一のバーストリードでFIFO全体を読み出すことができます。
+
+**補足情報:**
+
+- **FIFOサイズ:** BMI270のオンチップFIFOバッファのサイズは**2048バイト**（2 KB）です。
+- **FIFO充填レベルの確認:** 現在のFIFO充填レベルは、レジスタ`FIFO_LENGTH_0` (LSB, 0x24) および `FIFO_LENGTH_1` (MSB, 0x25) で確認できます。
+- **FIFOフル割り込み:** ウォーターマーク割り込みとは別に、FIFOの充填レベルがフルの閾値を超えたとき（最後の2フレームが格納される直前）に「FIFOフル割り込み」が発行されます。
+
+**例えるなら、ウォーターマークの設定は、バケツ（FIFOバッファ）に水を貯める際に、バケツが満タンになる前に「そろそろ汲み出してください」と知らせる水位計を設定するようなものです。** `FIFO_WTM_0`と`FIFO_WTM_1`はその水位計の目盛りの位置（バイト数）を定義し、設定された水位に達すると、割り込み（アラーム）が発生して、ホストプロセッサ（水を汲み出す人）に通知します。
+
+#### FIFOデータ読み取り実装
+
+```c
+// Step 1: FIFO内のデータ量を確認
+uint8_t fifo_len_buf[2];
+bmi270_read_burst(dev, 0x24, fifo_len_buf, 2);
+uint16_t fifo_length = (fifo_len_buf[1] << 8) | fifo_len_buf[0];
+
+if (fifo_length == 0) {
+    return ESP_OK;  // データなし
+}
+
+// Step 2: FIFOデータをバースト読み取り
+uint8_t *fifo_data = malloc(fifo_length);
+bmi270_read_burst(dev, 0x26, fifo_data, fifo_length);
+
+// Step 3: ヘッダーモードでフレーム解析
+size_t pos = 0;
+while (pos < fifo_length) {
+    uint8_t header = fifo_data[pos++];
+
+    if ((header & 0xFC) == 0x84) {
+        // 加速度のみフレーム（7バイト）
+        if (pos + 6 > fifo_length) break;
+
+        int16_t acc_x = (fifo_data[pos+1] << 8) | fifo_data[pos+0];
+        int16_t acc_y = (fifo_data[pos+3] << 8) | fifo_data[pos+2];
+        int16_t acc_z = (fifo_data[pos+5] << 8) | fifo_data[pos+4];
+        pos += 6;
+
+        // データ処理...
+
+    } else if ((header & 0xFC) == 0x88) {
+        // ジャイロのみフレーム（7バイト）
+        if (pos + 6 > fifo_length) break;
+
+        int16_t gyr_x = (fifo_data[pos+1] << 8) | fifo_data[pos+0];
+        int16_t gyr_y = (fifo_data[pos+3] << 8) | fifo_data[pos+2];
+        int16_t gyr_z = (fifo_data[pos+5] << 8) | fifo_data[pos+4];
+        pos += 6;
+
+        // データ処理...
+
+    } else if ((header & 0xFC) == 0x8C) {
+        // 加速度+ジャイロフレーム（13バイト）
+        if (pos + 12 > fifo_length) break;
+
+        int16_t acc_x = (fifo_data[pos+1] << 8) | fifo_data[pos+0];
+        int16_t acc_y = (fifo_data[pos+3] << 8) | fifo_data[pos+2];
+        int16_t acc_z = (fifo_data[pos+5] << 8) | fifo_data[pos+4];
+        int16_t gyr_x = (fifo_data[pos+7] << 8) | fifo_data[pos+6];
+        int16_t gyr_y = (fifo_data[pos+9] << 8) | fifo_data[pos+8];
+        int16_t gyr_z = (fifo_data[pos+11] << 8) | fifo_data[pos+10];
+        pos += 12;
+
+        // データ処理...
+    }
+}
+
+free(fifo_data);
+```
+
+#### FIFOフラッシュ
+
+FIFOをクリアするには、CMD レジスタ (0x7E) に `0xB0` を書き込みます:
+
+```c
+bmi270_write_register(dev, 0x7E, 0xB0);  // FIFO flush command
+```
+
+#### トラブルシューティング
+
+**症状**: FIFO_LENGTH が常に 0
+
+**考えられる原因と対策**:
+
+1. **FIFOが有効化されていない**:
+   - FIFO_CONFIG_1 の fifo_acc_en / fifo_gyr_en ビットを確認
+   - 対策: 少なくとも1つのセンサーを有効化
+
+2. **センサーが無効**:
+   - PWR_CTRL でセンサーが有効化されているか確認
+   - 対策: PWR_CTRL = 0x06（加速度+ジャイロ）
+
+3. **ODRが設定されていない**:
+   - ACC_CONF / GYR_CONF でODRを設定
+   - 対策: 適切なODR値を設定（例: 0x08 = 100Hz）
+
+**症状**: フレーム解析エラー、データが壊れている
+
+**考えられる原因と対策**:
+
+1. **ヘッダーモードの不一致**:
+   - FIFO_CONFIG_1.fifo_header_en の設定とコードが一致していない
+   - 対策: ヘッダーモードを有効化してヘッダー付きで解析
+
+2. **SPI読み取りエラー**:
+   - FIFO_DATAレジスタからのバースト読み取りが失敗
+   - 対策: SPI通信の安定性を確認、CS信号のタイミング確認
+
+3. **FIFO満杯**:
+   - ストリームモード(fifo_stop_on_full=0)で古いデータが上書きされた
+   - 対策: ウォーターマーク割り込みでこまめに読み取る
+
+**症状**: データ取得レートが予想より遅い
+
+**考えられる原因と対策**:
+
+1. **ダウンサンプリングが有効**:
+   - FIFO_DOWNS レジスタを確認
+   - 対策: ダウンサンプリングを無効化（0x00）またはダウンサンプル比を調整
+
+2. **ウォーターマークが大きすぎる**:
+   - 割り込みまでの時間が長い
+   - 対策: ウォーターマーク値を小さくする
+
+#### パフォーマンス比較
+
+| 方式 | サンプリングレート | SPI通信回数/秒 | CPU負荷 |
+|------|------------------|---------------|---------|
+| ポーリング（100ms間隔） | 10 Hz | 10回 | 高 |
+| 割り込み（200Hz ODR） | 200 Hz | 200回 | 中 |
+| **FIFO（ウォーターマーク512バイト、200Hz）** | **200 Hz** | **~15回** | **低** |
+
+FIFO使用時、39フレーム（512バイト）ごとに1回の読み取りで済むため、200Hz時でも約15回/秒のSPI通信で完了します。
+
+**推奨用途**:
+- **ポーリング**: プロトタイプ、低速（< 50Hz）
+- **割り込み**: 中速（50-400Hz）、リアルタイム性重視
+- **FIFO**: 高速（≥ 400Hz）、低消費電力、バッチ処理
+
 ---
 
 ## 5.0 FIFOを利用した高速データ読み取り
