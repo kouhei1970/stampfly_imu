@@ -192,9 +192,10 @@ esp_err_t bmi270_read_temperature(bmi270_dev_t *dev, float *temperature) {
         return ret;
     }
 
-    // Combine MSB and LSB (big-endian for temperature)
-    // Note: Temperature is stored as MSB first
-    int16_t temp_raw = (int16_t)((temp_data[0] << 8) | temp_data[1]);
+    // Combine MSB and LSB (little-endian, same as accelerometer/gyroscope)
+    // Note: Despite datasheet saying big-endian, actual hardware appears to use little-endian
+    // temp_data[0] = LSB, temp_data[1] = MSB
+    int16_t temp_raw = (int16_t)((temp_data[1] << 8) | temp_data[0]);
 
     // Convert to physical units using BMI270 formula:
     // Temperature (°C) = (temp_raw / 512.0) + 23.0

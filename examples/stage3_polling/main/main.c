@@ -28,7 +28,7 @@ static const char *TAG = "BMI270_STAGE3";
 #define PMW3901_CS_PIN      12        // Other device on shared SPI bus
 
 // Polling interval
-#define POLLING_INTERVAL_MS 100  // 100ms = 10Hz
+#define POLLING_INTERVAL_MS 10  // 10ms = 100Hz
 
 void app_main(void)
 {
@@ -119,15 +119,13 @@ void app_main(void)
 
     // Step 5: Start continuous data reading
     ESP_LOGI(TAG, "Step 5: Starting continuous data reading...");
-    ESP_LOGI(TAG, "Polling interval: %d ms", POLLING_INTERVAL_MS);
+    ESP_LOGI(TAG, "Polling interval: %d ms (%.1f Hz)", POLLING_INTERVAL_MS, 1000.0f / POLLING_INTERVAL_MS);
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, " Data Stream (press Ctrl+] to stop)");
+    ESP_LOGI(TAG, " Teleplot Data Stream (press Ctrl+] to stop)");
     ESP_LOGI(TAG, "========================================");
 
     vTaskDelay(pdMS_TO_TICKS(1000));  // Wait 1 second before starting
-
-    uint32_t sample_count = 0;
 
     while (1) {
         // Read raw data
@@ -166,29 +164,40 @@ void app_main(void)
         // Read temperature
         float temperature;
         ret = bmi270_read_temperature(&dev, &temperature);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to read temperature");
-            temperature = 0.0f;  // Set to 0 if read fails
+
+        // Calculate raw value from physical temperature (for display purposes)
+        // Note: This is reverse-calculated, not actual raw register value
+        int16_t temp_raw = 0;
+        if (ret == ESP_OK) {
+            temp_raw = (int16_t)((temperature - 23.0f) * 512.0f);
+        } else {
+            temperature = 0.0f;
         }
 
-        // Display data
-        sample_count++;
+        // Teleplot output format
+        // Accelerometer raw (LSB)
+        printf(">acc_raw_x:%d\n", acc_raw.x);
+        printf(">acc_raw_y:%d\n", acc_raw.y);
+        printf(">acc_raw_z:%d\n", acc_raw.z);
 
-        printf("\n[Sample #%lu]\n", sample_count);
-        printf("  Accelerometer (±4g):\n");
-        printf("    Raw:      X=%6d  Y=%6d  Z=%6d [LSB]\n",
-               acc_raw.x, acc_raw.y, acc_raw.z);
-        printf("    Physical: X=%7.3f  Y=%7.3f  Z=%7.3f [g]\n",
-               accel.x, accel.y, accel.z);
+        // Accelerometer physical (g)
+        printf(">acc_x:%.4f\n", accel.x);
+        printf(">acc_y:%.4f\n", accel.y);
+        printf(">acc_z:%.4f\n", accel.z);
 
-        printf("  Gyroscope (±1000 °/s):\n");
-        printf("    Raw:      X=%6d  Y=%6d  Z=%6d [LSB]\n",
-               gyr_raw.x, gyr_raw.y, gyr_raw.z);
-        printf("    Physical: X=%8.2f  Y=%8.2f  Z=%8.2f [°/s]\n",
-               gyro.x, gyro.y, gyro.z);
+        // Gyroscope raw (LSB)
+        printf(">gyr_raw_x:%d\n", gyr_raw.x);
+        printf(">gyr_raw_y:%d\n", gyr_raw.y);
+        printf(">gyr_raw_z:%d\n", gyr_raw.z);
 
-        printf("  Temperature:\n");
-        printf("    Value:    %6.2f [°C]\n", temperature);
+        // Gyroscope physical (°/s)
+        printf(">gyr_x:%.3f\n", gyro.x);
+        printf(">gyr_y:%.3f\n", gyro.y);
+        printf(">gyr_z:%.3f\n", gyro.z);
+
+        // Temperature raw (LSB) and physical (°C)
+        printf(">temp_raw:%d\n", temp_raw);
+        printf(">temp:%.2f\n", temperature);
 
         // Wait for next sample
         vTaskDelay(pdMS_TO_TICKS(POLLING_INTERVAL_MS));
