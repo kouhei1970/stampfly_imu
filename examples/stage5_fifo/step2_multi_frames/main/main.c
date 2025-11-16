@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "bmi270_spi.h"
 #include "bmi270_init.h"
 #include "bmi270_data.h"
@@ -76,9 +77,11 @@ static esp_err_t read_fifo_data(uint8_t *buffer, uint16_t length)
 
 /**
  * @brief Parse and display one FIFO frame
+ * @param frame_data Frame data buffer
+ * @param timestamp_us Timestamp in microseconds
  * @return ESP_OK if frame is valid ACC+GYR frame, ESP_FAIL otherwise
  */
-static esp_err_t parse_frame(const uint8_t *frame_data)
+static esp_err_t parse_frame(const uint8_t *frame_data, int64_t timestamp_us)
 {
     uint8_t header = frame_data[0];
 
@@ -120,13 +123,13 @@ static esp_err_t parse_frame(const uint8_t *frame_data)
     bmi270_convert_gyro_raw(&g_dev, &gyr_raw, &gyro);
     bmi270_convert_accel_raw(&g_dev, &acc_raw, &accel);
 
-    // Teleplot output format (only valid frames)
-    printf(">gyr_x:%.2f\n", gyro.x);
-    printf(">gyr_y:%.2f\n", gyro.y);
-    printf(">gyr_z:%.2f\n", gyro.z);
-    printf(">acc_x:%.3f\n", accel.x);
-    printf(">acc_y:%.3f\n", accel.y);
-    printf(">acc_z:%.3f\n", accel.z);
+    // Teleplot output format with timestamp (only valid frames)
+    printf(">gyr_x:%lld:%.2f\n", timestamp_us, gyro.x);
+    printf(">gyr_y:%lld:%.2f\n", timestamp_us, gyro.y);
+    printf(">gyr_z:%lld:%.2f\n", timestamp_us, gyro.z);
+    printf(">acc_x:%lld:%.3f\n", timestamp_us, accel.x);
+    printf(">acc_y:%lld:%.3f\n", timestamp_us, accel.y);
+    printf(">acc_z:%lld:%.3f\n", timestamp_us, accel.z);
 
     g_valid_frames++;
     return ESP_OK;
@@ -142,11 +145,22 @@ static void parse_fifo_buffer(const uint8_t *buffer, uint16_t length)
 
     ESP_LOGI(TAG, "Parsing %d frames (%u bytes)", num_frames, length);
 
+    // Get current timestamp (for the most recent frame)
+    int64_t base_time_us = esp_timer_get_time();
+
+    // Calculate frame interval: 100Hz ODR = 10ms = 10000us per frame
+    const int64_t frame_interval_us = 10000;
+
     for (int i = 0; i < num_frames; i++) {
         const uint8_t *frame = &buffer[i * FIFO_FRAME_SIZE_HEADER];
         g_total_frames++;
 
-        if (parse_frame(frame) == ESP_OK) {
+        // Calculate timestamp for this frame
+        // FIFO is FIFO (first-in-first-out), so frame[0] is oldest
+        // frame[num_frames-1] is newest (closest to base_time)
+        int64_t frame_time_us = base_time_us - (num_frames - 1 - i) * frame_interval_us;
+
+        if (parse_frame(frame, frame_time_us) == ESP_OK) {
             valid_count++;
         }
     }
