@@ -1,12 +1,13 @@
 /**
  * @file main.c
- * @brief BMI270 Step 2: FIFO Multiple Frames Read
+ * @brief BMI270 Step 2: FIFO Multiple Frames Read (Averaged Output)
  *
  * This example demonstrates:
  * - Reading all available FIFO data in one burst
  * - Parsing multiple frames from FIFO buffer
  * - Handling special headers (0x40, 0x48)
  * - Preventing data loss by reading FIFO_LENGTH bytes
+ * - Outputting averaged sensor data to reduce printf overhead
  */
 
 #include <stdio.h>
@@ -51,6 +52,9 @@ static uint32_t g_valid_frames = 0;
 static uint32_t g_skip_frames = 0;
 static uint32_t g_config_frames = 0;
 
+// Timestamp baseline (for relative timestamps)
+static int64_t g_start_time_us = 0;
+
 /**
  * @brief Read FIFO length
  */
@@ -76,12 +80,13 @@ static esp_err_t read_fifo_data(uint8_t *buffer, uint16_t length)
 }
 
 /**
- * @brief Parse and display one FIFO frame
+ * @brief Parse one FIFO frame and accumulate data
  * @param frame_data Frame data buffer
- * @param timestamp_us Timestamp in microseconds
+ * @param gyro Output gyroscope data (physical values)
+ * @param accel Output accelerometer data (physical values)
  * @return ESP_OK if frame is valid ACC+GYR frame, ESP_FAIL otherwise
  */
-static esp_err_t parse_frame(const uint8_t *frame_data, int64_t timestamp_us)
+static esp_err_t parse_frame(const uint8_t *frame_data, bmi270_gyro_t *gyro, bmi270_accel_t *accel)
 {
     uint8_t header = frame_data[0];
 
@@ -117,26 +122,15 @@ static esp_err_t parse_frame(const uint8_t *frame_data, int64_t timestamp_us)
     bmi270_raw_data_t gyr_raw = {gyr_x, gyr_y, gyr_z};
     bmi270_raw_data_t acc_raw = {acc_x, acc_y, acc_z};
 
-    bmi270_gyro_t gyro;
-    bmi270_accel_t accel;
-
-    bmi270_convert_gyro_raw(&g_dev, &gyr_raw, &gyro);
-    bmi270_convert_accel_raw(&g_dev, &acc_raw, &accel);
-
-    // Teleplot output format with timestamp (only valid frames)
-    printf(">gyr_x:%lld:%.2f\n", timestamp_us, gyro.x);
-    printf(">gyr_y:%lld:%.2f\n", timestamp_us, gyro.y);
-    printf(">gyr_z:%lld:%.2f\n", timestamp_us, gyro.z);
-    printf(">acc_x:%lld:%.3f\n", timestamp_us, accel.x);
-    printf(">acc_y:%lld:%.3f\n", timestamp_us, accel.y);
-    printf(">acc_z:%lld:%.3f\n", timestamp_us, accel.z);
+    bmi270_convert_gyro_raw(&g_dev, &gyr_raw, gyro);
+    bmi270_convert_accel_raw(&g_dev, &acc_raw, accel);
 
     g_valid_frames++;
     return ESP_OK;
 }
 
 /**
- * @brief Parse all frames in FIFO buffer
+ * @brief Parse all frames in FIFO buffer and output averaged data
  */
 static void parse_fifo_buffer(const uint8_t *buffer, uint16_t length)
 {
@@ -145,27 +139,60 @@ static void parse_fifo_buffer(const uint8_t *buffer, uint16_t length)
 
     ESP_LOGI(TAG, "Parsing %d frames (%u bytes)", num_frames, length);
 
-    // Get current timestamp (for the most recent frame)
+    // Get current timestamp (for this batch read)
     int64_t base_time_us = esp_timer_get_time();
 
-    // Calculate frame interval: 100Hz ODR = 10ms = 10000us per frame
-    const int64_t frame_interval_us = 10000;
+    // Initialize baseline timestamp on first call
+    if (g_start_time_us == 0) {
+        g_start_time_us = base_time_us;
+        ESP_LOGI(TAG, "Initialized timestamp baseline (t=0.000000s)");
+    }
 
+    // Accumulators for averaging
+    double sum_gyr_x = 0.0, sum_gyr_y = 0.0, sum_gyr_z = 0.0;
+    double sum_acc_x = 0.0, sum_acc_y = 0.0, sum_acc_z = 0.0;
+
+    // Parse all frames and accumulate values
     for (int i = 0; i < num_frames; i++) {
         const uint8_t *frame = &buffer[i * FIFO_FRAME_SIZE_HEADER];
         g_total_frames++;
 
-        // Calculate timestamp for this frame
-        // FIFO is FIFO (first-in-first-out), so frame[0] is oldest
-        // frame[num_frames-1] is newest (closest to base_time)
-        int64_t frame_time_us = base_time_us - (num_frames - 1 - i) * frame_interval_us;
+        bmi270_gyro_t gyro;
+        bmi270_accel_t accel;
 
-        if (parse_frame(frame, frame_time_us) == ESP_OK) {
+        if (parse_frame(frame, &gyro, &accel) == ESP_OK) {
+            sum_gyr_x += gyro.x;
+            sum_gyr_y += gyro.y;
+            sum_gyr_z += gyro.z;
+            sum_acc_x += accel.x;
+            sum_acc_y += accel.y;
+            sum_acc_z += accel.z;
             valid_count++;
         }
     }
 
     ESP_LOGI(TAG, "Valid frames: %d/%d", valid_count, num_frames);
+
+    // Calculate average and output (only if we have valid data)
+    if (valid_count > 0) {
+        double avg_gyr_x = sum_gyr_x / valid_count;
+        double avg_gyr_y = sum_gyr_y / valid_count;
+        double avg_gyr_z = sum_gyr_z / valid_count;
+        double avg_acc_x = sum_acc_x / valid_count;
+        double avg_acc_y = sum_acc_y / valid_count;
+        double avg_acc_z = sum_acc_z / valid_count;
+
+        // Timestamp in relative seconds
+        double timestamp_sec = (double)(base_time_us - g_start_time_us) / 1000000.0;
+
+        // Teleplot output format (averaged data with timestamp)
+        printf(">gyr_x:%.6f:%.2f\n", timestamp_sec, avg_gyr_x);
+        printf(">gyr_y:%.6f:%.2f\n", timestamp_sec, avg_gyr_y);
+        printf(">gyr_z:%.6f:%.2f\n", timestamp_sec, avg_gyr_z);
+        printf(">acc_x:%.6f:%.3f\n", timestamp_sec, avg_acc_x);
+        printf(">acc_y:%.6f:%.3f\n", timestamp_sec, avg_acc_y);
+        printf(">acc_z:%.6f:%.3f\n", timestamp_sec, avg_acc_z);
+    }
 }
 
 void app_main(void)
