@@ -328,6 +328,7 @@ void app_main(void)
             const uint8_t *buffer_ptr = fifo_buffer;
             uint16_t remaining = fifo_length;
             uint32_t frame_count = 0;
+            uint32_t acc_frames = 0, gyr_frames = 0, acc_gyr_frames = 0, other_frames = 0;
 
             while (remaining > 0) {
                 bmi270_fifo_frame_t frame;
@@ -339,6 +340,17 @@ void app_main(void)
                     }
                     ESP_LOGW(TAG, "Frame parse error");
                     continue;
+                }
+
+                // Count frame types for debugging
+                if (frame.type == BMI270_FIFO_FRAME_ACC) {
+                    acc_frames++;
+                } else if (frame.type == BMI270_FIFO_FRAME_GYR) {
+                    gyr_frames++;
+                } else if (frame.type == BMI270_FIFO_FRAME_ACC_GYR) {
+                    acc_gyr_frames++;
+                } else {
+                    other_frames++;
                 }
 
                 // Process only accelerometer + gyroscope frames
@@ -393,8 +405,10 @@ void app_main(void)
             // Output frame count
             printf(">fifo_count:%lu\n", frame_count);
 
-            // Log batch processing
-            ESP_LOGI(TAG, "FIFO watermark reached: %lu frames read", frame_count);
+            // Log batch processing with frame type breakdown
+            ESP_LOGI(TAG, "FIFO watermark reached: Total=%lu (ACC=%lu, GYR=%lu, ACC+GYR=%lu, Other=%lu)",
+                     acc_frames + gyr_frames + acc_gyr_frames + other_frames,
+                     acc_frames, gyr_frames, acc_gyr_frames, other_frames);
 
             // NOTE: Do NOT flush FIFO here - FIFO_DATA register read should auto-advance pointer
             // Flushing here causes data loss (only 10 frames instead of expected 39)
