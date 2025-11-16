@@ -41,12 +41,39 @@ uint8_t fifo_config_1 = 0xD0;
    - `FIFO_LENGTH`レジスタ（0x24-0x25）読み取り
    - FIFO_LENGTH分を**一括バースト読み取り**
    - バッファを13バイトずつパース:
-     - 0x8C（ACC+GYR）: データ解析・表示
+     - 各フレームにタイムスタンプを付与（10ms間隔で逆算）
+     - 0x8C（ACC+GYR）: データ解析・Teleplot出力（タイムスタンプ付き）
      - 0x48（設定変更）: デバッグログ出力、継続
      - 0x40（スキップ）: 警告ログ出力、継続
    - FIFO長さ確認（全データ消費を確認）
    - 統計情報表示
    - 100ms待機（次回ポーリング）
+
+## タイムスタンプ機能
+
+### 実装詳細
+
+各フレームに正確なタイムスタンプを付与して時系列データを保持します。
+
+**計算ロジック:**
+- センサーODR: 100Hz = 10ms間隔
+- FIFO: 先入れ先出し（frame[0]が最も古い）
+- base_time = 現在時刻（最新フレームのタイムスタンプ）
+- frame[i]のタイムスタンプ = base_time - (num_frames - 1 - i) × 10ms
+
+**例（10フレーム読み取り時）:**
+```
+frame[0] = base_time - 90ms  (最も古い)
+frame[1] = base_time - 80ms
+...
+frame[9] = base_time - 0ms   (最新)
+```
+
+**Teleplot出力形式:**
+```
+>channel_name:timestamp_us:value
+>gyr_x:1234567890:0.12
+```
 
 ## データロス防止のメカニズム
 
@@ -112,13 +139,14 @@ I (XXX) BMI270_STEP2: Loop #1, FIFO length: 143 bytes
 I (XXX) BMI270_STEP2: Parsing 11 frames (143 bytes)
 D (XXX) BMI270_STEP2: Config change frame (0x48)
 I (XXX) BMI270_STEP2: Valid frames: 10/11
->gyr_x:0.00
->gyr_y:-0.12
->gyr_z:-0.12
->acc_x:0.011
->acc_y:-0.025
->acc_z:0.989
-[... Teleplot output ...]
+>gyr_x:1234567890:0.00
+>gyr_y:1234567890:-0.12
+>gyr_z:1234567890:-0.12
+>acc_x:1234567890:0.011
+>acc_y:1234567890:-0.025
+>acc_z:1234567890:0.989
+>gyr_x:1234577890:0.00
+[... Teleplot output with timestamps ...]
 I (XXX) BMI270_STEP2: FIFO length after read: 0 bytes (consumed: 143 bytes)
 I (XXX) BMI270_STEP2: Statistics: Total=11 Valid=10 Skip=0 Config=1
 ```
