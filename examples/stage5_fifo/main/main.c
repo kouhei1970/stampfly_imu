@@ -262,19 +262,28 @@ void app_main(void)
     // Read FIFO configuration and interrupt mapping registers
     uint8_t fifo_config_0, fifo_config_1, int_map_data, int1_io_ctrl;
     uint8_t fifo_wtm_0, fifo_wtm_1;
+    uint8_t acc_conf, gyr_conf;  // ODR configuration
     bmi270_read_register(&g_dev, 0x48, &fifo_config_0);
     bmi270_read_register(&g_dev, 0x49, &fifo_config_1);
     bmi270_read_register(&g_dev, 0x58, &int_map_data);  // Correct register for FIFO interrupts
     bmi270_read_register(&g_dev, 0x53, &int1_io_ctrl);
     bmi270_read_register(&g_dev, 0x46, &fifo_wtm_0);
     bmi270_read_register(&g_dev, 0x47, &fifo_wtm_1);
+    bmi270_read_register(&g_dev, 0x40, &acc_conf);  // ACC_CONF register
+    bmi270_read_register(&g_dev, 0x42, &gyr_conf);  // GYR_CONF register
 
     // Watermark register is in BYTE units (not 4-byte words)
     uint16_t wtm_bytes = (uint16_t)((fifo_wtm_1 << 8) | fifo_wtm_0);
+    uint8_t acc_odr = acc_conf & 0x0F;  // Lower 4 bits = ODR
+    uint8_t gyr_odr = gyr_conf & 0x0F;  // Lower 4 bits = ODR
+
     ESP_LOGI(TAG, "FIFO_CONFIG_0: 0x%02X, FIFO_CONFIG_1: 0x%02X", fifo_config_0, fifo_config_1);
     ESP_LOGI(TAG, "INT_MAP_DATA: 0x%02X (should be 0x02), INT1_IO_CTRL: 0x%02X", int_map_data, int1_io_ctrl);
     ESP_LOGI(TAG, "FIFO_WTM: 0x%02X%02X = %u bytes (watermark register is in byte units)",
              fifo_wtm_1, fifo_wtm_0, wtm_bytes);
+    // ODR reference: 0x08=100Hz, 0x09=200Hz, 0x0A=400Hz, 0x0B=800Hz, 0x0C=1600Hz
+    ESP_LOGI(TAG, "ACC_CONF: 0x%02X (ODR=0x%01X), GYR_CONF: 0x%02X (ODR=0x%01X)",
+             acc_conf, acc_odr, gyr_conf, gyr_odr);
 
     // Verify FIFO is empty after flush
     uint16_t fifo_length;
