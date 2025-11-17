@@ -144,7 +144,7 @@ esp_err_t bmi270_read_accel(bmi270_dev_t *dev, bmi270_accel_t *data) {
 }
 
 /**
- * @brief Read gyroscope data in physical units (°/s)
+ * @brief Read gyroscope data in physical units (rad/s)
  */
 esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data) {
     if (dev == NULL || data == NULL) {
@@ -162,10 +162,135 @@ esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data) {
     // Get scale factor based on current range
     float scale = bmi270_get_gyro_scale(dev->gyr_range);
 
+    // Convert to physical units (°/s first, then to rad/s)
+    data->x = ((float)raw.x / scale) * BMI270_DEG_TO_RAD;
+    data->y = ((float)raw.y / scale) * BMI270_DEG_TO_RAD;
+    data->z = ((float)raw.z / scale) * BMI270_DEG_TO_RAD;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Read gyroscope data in degrees per second (dps)
+ */
+esp_err_t bmi270_read_gyro_dps(bmi270_dev_t *dev, bmi270_gyro_t *data) {
+    if (dev == NULL || data == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_read_gyro_dps");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Read raw data
+    bmi270_raw_data_t raw;
+    esp_err_t ret = bmi270_read_gyro_raw(dev, &raw);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    // Get scale factor based on current range
+    float scale = bmi270_get_gyro_scale(dev->gyr_range);
+
     // Convert to physical units (°/s)
     data->x = (float)raw.x / scale;
     data->y = (float)raw.y / scale;
     data->z = (float)raw.z / scale;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Read both gyroscope and accelerometer data simultaneously (rad/s and g)
+ */
+esp_err_t bmi270_read_gyro_accel(bmi270_dev_t *dev, bmi270_gyro_t *gyro, bmi270_accel_t *accel) {
+    if (dev == NULL || gyro == NULL || accel == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_read_gyro_accel");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->init_complete) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Read 12 bytes starting from ACC_X_LSB (0x0C)
+    // This reads both accelerometer and gyroscope in one burst
+    uint8_t buf[12];
+    esp_err_t ret = bmi270_read_burst(dev, BMI270_REG_ACC_X_LSB, buf, 12);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read gyro+accel data");
+        return ret;
+    }
+
+    // Parse accelerometer data (bytes 0-5)
+    int16_t acc_x = (int16_t)((buf[1] << 8) | buf[0]);
+    int16_t acc_y = (int16_t)((buf[3] << 8) | buf[2]);
+    int16_t acc_z = (int16_t)((buf[5] << 8) | buf[4]);
+
+    // Parse gyroscope data (bytes 6-11)
+    int16_t gyr_x = (int16_t)((buf[7] << 8) | buf[6]);
+    int16_t gyr_y = (int16_t)((buf[9] << 8) | buf[8]);
+    int16_t gyr_z = (int16_t)((buf[11] << 8) | buf[10]);
+
+    // Get scale factors
+    float acc_scale = bmi270_get_accel_scale(dev->acc_range);
+    float gyr_scale = bmi270_get_gyro_scale(dev->gyr_range);
+
+    // Convert to physical units
+    accel->x = (float)acc_x / acc_scale;
+    accel->y = (float)acc_y / acc_scale;
+    accel->z = (float)acc_z / acc_scale;
+
+    gyro->x = ((float)gyr_x / gyr_scale) * BMI270_DEG_TO_RAD;  // Convert to rad/s
+    gyro->y = ((float)gyr_y / gyr_scale) * BMI270_DEG_TO_RAD;
+    gyro->z = ((float)gyr_z / gyr_scale) * BMI270_DEG_TO_RAD;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Read both gyroscope (dps) and accelerometer data simultaneously
+ */
+esp_err_t bmi270_read_gyro_accel_dps(bmi270_dev_t *dev, bmi270_gyro_t *gyro, bmi270_accel_t *accel) {
+    if (dev == NULL || gyro == NULL || accel == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_read_gyro_accel_dps");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!dev->init_complete) {
+        ESP_LOGE(TAG, "BMI270 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Read 12 bytes starting from ACC_X_LSB (0x0C)
+    // This reads both accelerometer and gyroscope in one burst
+    uint8_t buf[12];
+    esp_err_t ret = bmi270_read_burst(dev, BMI270_REG_ACC_X_LSB, buf, 12);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read gyro+accel data");
+        return ret;
+    }
+
+    // Parse accelerometer data (bytes 0-5)
+    int16_t acc_x = (int16_t)((buf[1] << 8) | buf[0]);
+    int16_t acc_y = (int16_t)((buf[3] << 8) | buf[2]);
+    int16_t acc_z = (int16_t)((buf[5] << 8) | buf[4]);
+
+    // Parse gyroscope data (bytes 6-11)
+    int16_t gyr_x = (int16_t)((buf[7] << 8) | buf[6]);
+    int16_t gyr_y = (int16_t)((buf[9] << 8) | buf[8]);
+    int16_t gyr_z = (int16_t)((buf[11] << 8) | buf[10]);
+
+    // Get scale factors
+    float acc_scale = bmi270_get_accel_scale(dev->acc_range);
+    float gyr_scale = bmi270_get_gyro_scale(dev->gyr_range);
+
+    // Convert to physical units
+    accel->x = (float)acc_x / acc_scale;
+    accel->y = (float)acc_y / acc_scale;
+    accel->z = (float)acc_z / acc_scale;
+
+    gyro->x = (float)gyr_x / gyr_scale;  // Keep in °/s
+    gyro->y = (float)gyr_y / gyr_scale;
+    gyro->z = (float)gyr_z / gyr_scale;
 
     return ESP_OK;
 }
@@ -191,11 +316,31 @@ esp_err_t bmi270_convert_accel_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *r
 }
 
 /**
- * @brief Convert raw gyroscope data to physical units (°/s)
+ * @brief Convert raw gyroscope data to physical units (rad/s)
  */
 esp_err_t bmi270_convert_gyro_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro) {
     if (dev == NULL || raw == NULL || gyro == NULL) {
         ESP_LOGE(TAG, "NULL pointer in bmi270_convert_gyro_raw");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Get scale factor based on current range
+    float scale = bmi270_get_gyro_scale(dev->gyr_range);
+
+    // Convert to physical units (°/s first, then to rad/s)
+    gyro->x = ((float)raw->x / scale) * BMI270_DEG_TO_RAD;
+    gyro->y = ((float)raw->y / scale) * BMI270_DEG_TO_RAD;
+    gyro->z = ((float)raw->z / scale) * BMI270_DEG_TO_RAD;
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Convert raw gyroscope data to degrees per second (dps)
+ */
+esp_err_t bmi270_convert_gyro_raw_dps(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro) {
+    if (dev == NULL || raw == NULL || gyro == NULL) {
+        ESP_LOGE(TAG, "NULL pointer in bmi270_convert_gyro_raw_dps");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -242,6 +387,22 @@ esp_err_t bmi270_read_temperature(bmi270_dev_t *dev, float *temperature) {
     *temperature = ((float)temp_raw / BMI270_TEMP_SCALE) + BMI270_TEMP_OFFSET;
 
     return ESP_OK;
+}
+
+/* ====== Unit Conversion Utilities ====== */
+
+/**
+ * @brief Convert angular velocity from rad/s to degrees/s
+ */
+float bmi270_rad_to_dps(float rad_per_sec) {
+    return rad_per_sec * BMI270_RAD_TO_DEG;
+}
+
+/**
+ * @brief Convert angular velocity from degrees/s to rad/s
+ */
+float bmi270_dps_to_rad(float deg_per_sec) {
+    return deg_per_sec * BMI270_DEG_TO_RAD;
 }
 
 /* ====== Configuration Functions ====== */

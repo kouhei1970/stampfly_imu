@@ -35,12 +35,12 @@ typedef struct {
 } bmi270_accel_t;
 
 /**
- * @brief Gyroscope data in physical units (°/s)
+ * @brief Gyroscope data in physical units (rad/s)
  */
 typedef struct {
-    float x;    ///< X-axis angular velocity [°/s]
-    float y;    ///< Y-axis angular velocity [°/s]
-    float z;    ///< Z-axis angular velocity [°/s]
+    float x;    ///< X-axis angular velocity [rad/s]
+    float y;    ///< Y-axis angular velocity [rad/s]
+    float z;    ///< Z-axis angular velocity [rad/s]
 } bmi270_gyro_t;
 
 /**
@@ -147,16 +147,55 @@ esp_err_t bmi270_read_gyro_raw(bmi270_dev_t *dev, bmi270_raw_data_t *data);
 esp_err_t bmi270_read_accel(bmi270_dev_t *dev, bmi270_accel_t *data);
 
 /**
- * @brief Read gyroscope data in physical units (°/s)
+ * @brief Read gyroscope data in physical units (rad/s)
  *
- * This function reads raw data and converts it to physical units
+ * This function reads raw data and converts it to physical units (rad/s)
+ * based on the current range setting.
+ *
+ * @param[in]  dev   Pointer to BMI270 device structure
+ * @param[out] data  Pointer to gyroscope data structure (units: rad/s)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data);
+
+/**
+ * @brief Read gyroscope data in degrees per second (dps)
+ *
+ * This function reads raw data and converts it to degrees per second
  * based on the current range setting.
  *
  * @param[in]  dev   Pointer to BMI270 device structure
  * @param[out] data  Pointer to gyroscope data structure (units: °/s)
  * @return ESP_OK on success, error code otherwise
  */
-esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data);
+esp_err_t bmi270_read_gyro_dps(bmi270_dev_t *dev, bmi270_gyro_t *data);
+
+/**
+ * @brief Read both gyroscope and accelerometer data simultaneously (rad/s and g)
+ *
+ * This function reads both sensors in a single burst transaction for optimal
+ * performance and data consistency.
+ *
+ * @param[in]  dev   Pointer to BMI270 device structure
+ * @param[out] gyro  Pointer to gyroscope data structure (units: rad/s)
+ * @param[out] accel Pointer to accelerometer data structure (units: g)
+ * @return ESP_OK on success, error code otherwise
+ *
+ * @note This is more efficient than calling bmi270_read_gyro() and bmi270_read_accel() separately
+ */
+esp_err_t bmi270_read_gyro_accel(bmi270_dev_t *dev, bmi270_gyro_t *gyro, bmi270_accel_t *accel);
+
+/**
+ * @brief Read both gyroscope (dps) and accelerometer data simultaneously
+ *
+ * Same as bmi270_read_gyro_accel() but returns gyroscope data in degrees per second.
+ *
+ * @param[in]  dev   Pointer to BMI270 device structure
+ * @param[out] gyro  Pointer to gyroscope data structure (units: °/s)
+ * @param[out] accel Pointer to accelerometer data structure (units: g)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t bmi270_read_gyro_accel_dps(bmi270_dev_t *dev, bmi270_gyro_t *gyro, bmi270_accel_t *accel);
 
 /**
  * @brief Convert raw accelerometer data to physical units (g)
@@ -172,9 +211,22 @@ esp_err_t bmi270_read_gyro(bmi270_dev_t *dev, bmi270_gyro_t *data);
 esp_err_t bmi270_convert_accel_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_accel_t *accel);
 
 /**
- * @brief Convert raw gyroscope data to physical units (°/s)
+ * @brief Convert raw gyroscope data to physical units (rad/s)
  *
- * This function converts raw gyroscope data to physical units
+ * This function converts raw gyroscope data to physical units (rad/s)
+ * based on the current range setting. Useful for FIFO data processing.
+ *
+ * @param[in]  dev  Pointer to BMI270 device structure
+ * @param[in]  raw  Pointer to raw data structure
+ * @param[out] gyro Pointer to gyroscope data structure (units: rad/s)
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t bmi270_convert_gyro_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro);
+
+/**
+ * @brief Convert raw gyroscope data to degrees per second (dps)
+ *
+ * This function converts raw gyroscope data to degrees per second
  * based on the current range setting. Useful for FIFO data processing.
  *
  * @param[in]  dev  Pointer to BMI270 device structure
@@ -182,7 +234,27 @@ esp_err_t bmi270_convert_accel_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *r
  * @param[out] gyro Pointer to gyroscope data structure (units: °/s)
  * @return ESP_OK on success, error code otherwise
  */
-esp_err_t bmi270_convert_gyro_raw(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro);
+esp_err_t bmi270_convert_gyro_raw_dps(bmi270_dev_t *dev, const bmi270_raw_data_t *raw, bmi270_gyro_t *gyro);
+
+/* ====== Unit Conversion Utilities ====== */
+
+/**
+ * @brief Convert angular velocity from rad/s to degrees/s
+ *
+ * @param[in] rad_per_sec Angular velocity in radians per second
+ * @return Angular velocity in degrees per second
+ */
+float bmi270_rad_to_dps(float rad_per_sec);
+
+/**
+ * @brief Convert angular velocity from degrees/s to rad/s
+ *
+ * @param[in] deg_per_sec Angular velocity in degrees per second
+ * @return Angular velocity in radians per second
+ */
+float bmi270_dps_to_rad(float deg_per_sec);
+
+/* ====== Temperature Reading ====== */
 
 /**
  * @brief Read temperature sensor data in °C

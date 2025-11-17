@@ -144,6 +144,10 @@ extern "C" {
 #define BMI270_GYR_SCALE_1000DPS        32.8f       // ±1000°/s range
 #define BMI270_GYR_SCALE_2000DPS        16.4f       // ±2000°/s range
 
+/* Unit Conversion Constants */
+#define BMI270_DEG_TO_RAD               0.017453292519943295f  // π/180
+#define BMI270_RAD_TO_DEG               57.295779513082321f     // 180/π
+
 /* ACC_CONF Register Bits */
 #define BMI270_ACC_CONF_FILTER_PERF     (1 << 7)    // Filter performance mode (bit 7)
 

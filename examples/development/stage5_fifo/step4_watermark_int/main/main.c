@@ -6,7 +6,7 @@
  * - FIFO watermark configuration (416 bytes = 32 frames for 50Hz output)
  * - Interrupt-driven FIFO read using INT1 (GPIO11)
  * - Efficient data acquisition without polling (1600Hz ODR)
- * - Outputting averaged sensor data to reduce printf overhead
+ * - Averaged sensor data output
  */
 
 #include <stdio.h>
@@ -74,6 +74,7 @@ static volatile bool g_teleplot_enabled = true;  // Default: enabled
 // Semaphore for interrupt notification
 static SemaphoreHandle_t fifo_semaphore = NULL;
 
+
 /**
  * @brief INT1 interrupt handler
  */
@@ -115,65 +116,6 @@ static esp_err_t configure_int1_gpio(void)
     return gpio_isr_handler_add(BMI270_INT1_PIN, bmi270_int1_isr_handler, NULL);
 }
 
-/**
- * @brief Configure BMI270 FIFO watermark and INT1
- */
-static esp_err_t configure_fifo_watermark_interrupt(void)
-{
-    esp_err_t ret;
-
-    // Set FIFO watermark (1014 bytes = 78 frames)
-    uint16_t watermark = FIFO_WATERMARK_BYTES;
-    uint8_t wtm_lsb = watermark & 0xFF;
-    uint8_t wtm_msb = (watermark >> 8) & 0x07;  // Only 11 bits used
-
-    ret = bmi270_write_register(&g_dev, BMI270_REG_FIFO_WTM_0, wtm_lsb);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write FIFO_WTM_0");
-        return ret;
-    }
-
-    ret = bmi270_write_register(&g_dev, BMI270_REG_FIFO_WTM_1, wtm_msb);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write FIFO_WTM_1");
-        return ret;
-    }
-
-    ESP_LOGD(TAG, "FIFO watermark set to %u bytes (%u frames)", watermark, watermark / FIFO_FRAME_SIZE_HEADER);
-
-    // Configure INT1 pin (active high, push-pull, output enabled, latched)
-    uint8_t int1_io_ctrl = (1 << 0) | (1 << 1) | (1 << 3);  // bit 0: latch, bit 1: output_en, bit 3: active high
-    ret = bmi270_write_register(&g_dev, BMI270_REG_INT1_IO_CTRL, int1_io_ctrl);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write INT1_IO_CTRL");
-        return ret;
-    }
-
-    ESP_LOGD(TAG, "INT1 configured: active high, push-pull, latched mode");
-
-    // Map FIFO watermark interrupt to INT1
-    uint8_t int_map_data = (1 << 1);  // bit 1: fwm_int -> INT1
-    ret = bmi270_write_register(&g_dev, BMI270_REG_INT_MAP_DATA, int_map_data);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write INT_MAP_DATA");
-        return ret;
-    }
-
-    ESP_LOGD(TAG, "FIFO watermark interrupt mapped to INT1");
-
-    // Readback and verify settings
-    uint8_t readback_wtm0, readback_wtm1, readback_int1_io, readback_int_map;
-    bmi270_read_register(&g_dev, BMI270_REG_FIFO_WTM_0, &readback_wtm0);
-    bmi270_read_register(&g_dev, BMI270_REG_FIFO_WTM_1, &readback_wtm1);
-    bmi270_read_register(&g_dev, BMI270_REG_INT1_IO_CTRL, &readback_int1_io);
-    bmi270_read_register(&g_dev, BMI270_REG_INT_MAP_DATA, &readback_int_map);
-
-    uint16_t readback_watermark = readback_wtm0 | ((readback_wtm1 & 0x07) << 8);
-    ESP_LOGD(TAG, "Readback - WTM: %u bytes, INT1_IO: 0x%02X, INT_MAP: 0x%02X",
-             readback_watermark, readback_int1_io, readback_int_map);
-
-    return ESP_OK;
-}
 
 /**
  * @brief Flush FIFO (clear all data)
@@ -313,9 +255,13 @@ static bool parse_fifo_buffer(const uint8_t *buffer, uint16_t length, bool outpu
         double avg_acc_y = sum_acc_y / valid_count;
         double avg_acc_z = sum_acc_z / valid_count;
 
-        // Teleplot output format (averaged data without timestamp, single printf)
-        printf(">gyr_x:%.2f\n>gyr_y:%.2f\n>gyr_z:%.2f\n>acc_x:%.3f\n>acc_y:%.3f\n>acc_z:%.3f\n",
-               avg_gyr_x, avg_gyr_y, avg_gyr_z, avg_acc_x, avg_acc_y, avg_acc_z);
+        // Teleplot output format (averaged data)
+        printf(">gyr_x:%.2f\n", avg_gyr_x);
+        printf(">gyr_y:%.2f\n", avg_gyr_y);
+        printf(">gyr_z:%.2f\n", avg_gyr_z);
+        printf(">acc_x:%.3f\n", avg_acc_x);
+        printf(">acc_y:%.3f\n", avg_acc_y);
+        printf(">acc_z:%.3f\n", avg_acc_z);
     }
 
     return skip_detected;
@@ -379,8 +325,8 @@ void app_main(void)
 {
     esp_err_t ret;
 
-    // Set log levels: suppress debug messages by default
-    esp_log_level_set("*", ESP_LOG_INFO);        // Global: INFO and above (WARNING, ERROR)
+    // Set log levels
+    esp_log_level_set("*", ESP_LOG_INFO);        // Global: INFO and above
     esp_log_level_set(TAG, ESP_LOG_INFO);        // This module: INFO and above
 
     ESP_LOGI(TAG, "========================================");
@@ -505,6 +451,7 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(10));
 
+
     // Step 9: Create semaphore for interrupt notification (BEFORE mapping interrupt)
     ESP_LOGI(TAG, "Step 9: Creating semaphore for interrupt notification...");
     fifo_semaphore = xSemaphoreCreateBinary();
@@ -551,7 +498,7 @@ void app_main(void)
         uint32_t current_time = esp_timer_get_time() / 1000000;  // Convert to seconds
         if (current_time - last_status_time >= 10) {
             last_status_time = current_time;
-            ESP_LOGD(TAG, "Status: INT count=%lu, Total=%lu, Valid=%lu, Skip=%lu, Output=%s",
+            ESP_LOGD(TAG, "Status: INT=%lu, Total=%lu, Valid=%lu, Skip=%lu, Output=%s",
                      g_interrupt_count, g_total_frames, g_valid_frames, g_skip_frames,
                      g_teleplot_enabled ? "ON" : "OFF");
         }

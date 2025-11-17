@@ -40,22 +40,23 @@ ESP32-S3 GPIO11 → BMI270 INT1ピン
 ```c
 // FIFO_WTM_0 (0x46): ウォーターマーク LSB
 // FIFO_WTM_1 (0x47): ウォーターマーク MSB（下位3ビットのみ有効）
-#define FIFO_WATERMARK_BYTES    1014    // 78フレーム（13バイト/フレーム）
+#define FIFO_WATERMARK_BYTES    416     // 32フレーム（13バイト/フレーム）
 
 uint16_t watermark = FIFO_WATERMARK_BYTES;
-uint8_t wtm_lsb = watermark & 0xFF;           // 0xF6
-uint8_t wtm_msb = (watermark >> 8) & 0x07;    // 0x03
+uint8_t wtm_lsb = watermark & 0xFF;           // 0xA0
+uint8_t wtm_msb = (watermark >> 8) & 0x07;    // 0x01
 
 bmi270_write_register(&g_dev, BMI270_REG_FIFO_WTM_0, wtm_lsb);
 bmi270_write_register(&g_dev, BMI270_REG_FIFO_WTM_1, wtm_msb);
 ```
 
-**なぜ1014バイト（78フレーム）？**
+**なぜ416バイト（32フレーム）？**
 - FIFO総容量: 2048バイト
 - 1フレーム: 13バイト（ヘッダー1 + GYR6 + ACC6）
 - 最大格納可能: 157フレーム（2041バイト）
-- ウォーターマーク: 78フレーム = **約半分満杯**
-- 理由: 割り込み発生後、読み取り処理中も新しいデータが蓄積されるため、半分の余裕を持たせることでオーバーフローを防止
+- ウォーターマーク: 32フレーム = **約1/5満杯**
+- 理由: 1600Hz ODRで50Hz出力を実現（32フレーム ÷ 1600Hz = 20ms間隔）
+- 割り込み発生後、読み取り処理中も新しいデータが蓄積されるが、十分な余裕あり
 
 ### INT1ピン設定
 
@@ -178,9 +179,9 @@ static void fifo_read_task(void *arg)
 
 ## 動作フロー
 
-1. センサー初期化（ACC/GYR 100Hz設定）
+1. センサー初期化（ACC/GYR 1600Hz設定）
 2. FIFO設定（ACC+GYR、ヘッダーモード、ストリームモード）
-3. ウォーターマーク設定（1014バイト）
+3. ウォーターマーク設定（416バイト）
 4. INT1割り込み設定（GPIO11、立ち上がりエッジ）
 5. 割り込みマッピング（FIFO watermark → INT1）
 6. FIFO読み取りタスク起動（セマフォ待機）
@@ -192,21 +193,6 @@ static void fifo_read_task(void *arg)
    - 平均値計算 → Teleplot出力
    - 統計情報表示
    - セマフォ待機（次の割り込みまでブロック）
-
-## 平均値出力
-
-### 実装詳細
-
-複数フレームを読み取り、**平均値を計算して出力**することでprintf処理のオーバーヘッドを削減します。
-
-**平均値計算:**
-- 全有効フレームのデータを蓄積
-- 平均値 = 合計値 / 有効フレーム数
-- 1回のprintfで6チャンネル出力（従来は6×フレーム数回のprintf）
-
-**出力最適化:**
-- 6回のprintfを1回にまとめることでさらにオーバーヘッド削減
-- バッファリング処理の効率化
 
 ## ビルド＆実行
 
@@ -253,38 +239,34 @@ I (XXX) BMI270_STEP4: Waiting for FIFO watermark interrupts...
 ### 割り込み発生とデータ読み取り
 
 ```
-I (XXX) BMI270_STEP4: ----------------------------------------
-I (XXX) BMI270_STEP4: Interrupt #1, FIFO length: 1027 bytes
-I (XXX) BMI270_STEP4: Parsing 79 frames (1027 bytes)
-D (XXX) BMI270_STEP4: Config change frame (0x48)
-I (XXX) BMI270_STEP4: Valid frames: 78/79
+I (XXX) BMI270_STEP4: Interrupt #1, FIFO length: 429 bytes
 >gyr_x:-0.05
 >gyr_y:0.12
 >gyr_z:-0.03
 >acc_x:0.012
 >acc_y:-0.024
 >acc_z:0.995
-I (XXX) BMI270_STEP4: FIFO length after read: 0 bytes
-I (XXX) BMI270_STEP4: Statistics: Total=79 Valid=78 Skip=0 Config=1 Flush=0 Interrupts=1
+I (XXX) BMI270_STEP4: Statistics: Total=33 Valid=32 Skip=0 Config=1 Interrupts=1
 ```
 
 **重要なポイント**:
-- 割り込み間隔: 約780ms（78フレーム ÷ 100Hz = 0.78秒）
-- FIFO長: 1014バイト以上（ウォーターマーク以上で割り込み発生）
-- フレーム数: 約78-80フレーム（設定通り）
+- 割り込み間隔: 約20ms（32フレーム ÷ 1600Hz = 0.02秒、50Hz出力）
+- FIFO長: 416バイト以上（ウォーターマーク以上で割り込み発生）
+- フレーム数: 約32フレーム（設定通り）
 
 ### 連続動作
 
 ```
-I (XXX) BMI270_STEP4: Interrupt #2, FIFO length: 1014 bytes
-I (XXX) BMI270_STEP4: Parsing 78 frames (1014 bytes)
-I (XXX) BMI270_STEP4: Valid frames: 78/78
+I (XXX) BMI270_STEP4: Interrupt #2, FIFO length: 416 bytes
 >gyr_x:-0.06
 >gyr_y:0.11
-...
-I (XXX) BMI270_STEP4: Statistics: Total=157 Valid=156 Skip=0 Config=1 Flush=0 Interrupts=2
+>gyr_z:-0.03
+>acc_x:0.012
+>acc_y:-0.024
+>acc_z:0.995
+I (XXX) BMI270_STEP4: Statistics: Total=65 Valid=64 Skip=0 Config=1 Interrupts=2
 
-I (XXX) BMI270_STEP4: Interrupt #3, FIFO length: 1027 bytes
+I (XXX) BMI270_STEP4: Interrupt #3, FIFO length: 416 bytes
 ...
 ```
 
@@ -293,16 +275,16 @@ I (XXX) BMI270_STEP4: Interrupt #3, FIFO length: 1027 bytes
 ### ✓ 割り込みが正常に発生しているか
 
 ```
-I (XXX) BMI270_STEP4: Interrupt #1, FIFO length: 1027 bytes
+I (XXX) BMI270_STEP4: Interrupt #1, FIFO length: 416 bytes
 ```
-→ 割り込みカウンタが増加し、FIFO長が1014バイト前後であればOK
+→ 割り込みカウンタが増加し、FIFO長が416バイト前後であればOK
 
 ### ✓ 割り込み間隔が適切か
 
 ```
-タイムスタンプ差分: 約0.78秒間隔
+タイムスタンプ差分: 約20ms間隔
 ```
-→ 78フレーム ÷ 100Hz = 0.78秒の間隔で割り込みが発生すればOK
+→ 32フレーム ÷ 1600Hz = 0.02秒（20ms）の間隔で割り込みが発生すればOK
 
 ### ✓ データロスがないか
 
@@ -321,7 +303,7 @@ Statistics: ... Skip=0 ... Flush=0
 - **低レイテンシ**: 割り込み発生から数us以内に処理開始
 - **低CPU使用率**: データがない時はタスクがブロック状態（電力削減）
 - **データロス防止**: ウォーターマークを半分満杯に設定し、読み取り処理中のオーバーフロー防止
-- **平均値出力**: 1回のprintfで全チャンネル出力、処理オーバーヘッド最小化
+- **平均化処理**: 複数フレームを平均化してノイズ低減
 - **自動復旧**: Skip frame検出時にFIFOフラッシュ
 
 ## 次のステップ
